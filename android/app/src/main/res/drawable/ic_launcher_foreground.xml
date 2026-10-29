@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icône Dossia : dossier blanc et coche verte, centrés dans la zone sûre
+     de 66 dp des icônes adaptatives. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M33,35 h13 l5,5 h24 a4,4 0 0 1 4,4 v28 a4,4 0 0 1 -4,4 h-42 a4,4 0 0 1 -4,-4 v-33 a4,4 0 0 1 4,-4 z" />
+    <path
+        android:strokeColor="#176B4D"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M44,58 l7,7 l13,-13" />
+</vector>
