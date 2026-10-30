@@ -19,9 +19,8 @@ Future<DocumentTypeRow?> showDocumentTypePicker(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    showDragHandle: true,
     builder: (context) => FractionallySizedBox(
-      heightFactor: 0.9,
+      heightFactor: 0.92,
       child: _TypePickerSheet(selectedId: selectedId),
     ),
   );
@@ -37,13 +36,19 @@ class _TypePickerSheet extends ConsumerStatefulWidget {
 }
 
 class _TypePickerSheetState extends ConsumerState<_TypePickerSheet> {
-  String _query = '';
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   Future<void> _create() async {
     final created = await showCreateTypeDialog(
       context,
       ref,
-      initialName: _query.trim(),
+      initialName: _search.text.trim(),
     );
     if (created != null && mounted) Navigator.of(context).pop(created);
   }
@@ -52,78 +57,80 @@ class _TypePickerSheetState extends ConsumerState<_TypePickerSheet> {
   Widget build(BuildContext context) {
     final types = ref.watch(documentTypesProvider);
     final theme = Theme.of(context);
+    final query = _search.text.trim();
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Type de document',
-                  style: theme.textTheme.titleLarge,
-                ),
-              ),
-            ],
-          ),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Text('Type de document', style: theme.textTheme.titleLarge),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: TextField(
-            autofocus: false,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Rechercher un type',
-            ),
-            onChanged: (v) => setState(() => _query = v),
+          child: SearchField(
+            controller: _search,
+            hint: 'Rechercher un type',
+            onChanged: (_) => setState(() {}),
           ),
         ),
-        ListTile(
-          leading: const Icon(Icons.add),
-          title: Text(
-            _query.trim().isEmpty
-                ? 'Créer un nouveau type'
-                : 'Créer le type « ${_query.trim()} »',
-          ),
-          onTap: _create,
-        ),
-        const Divider(),
+        const SizedBox(height: 8),
         Expanded(
           child: AsyncView(
             value: types,
             builder: (types) {
-              final q = normalizeForSearch(_query);
+              final q = normalizeForSearch(query);
               final filtered = types
                   .where((t) => normalizeForSearch(t.name).contains(q))
                   .toList();
-              if (filtered.isEmpty) {
-                return const EmptyState(
-                  icon: Icons.search_off,
-                  title: 'Aucun type trouvé',
-                  message:
-                      'Créez un nouveau type avec le nom recherché pour '
-                      "l'utiliser tout de suite.",
-                );
-              }
               final byCategory = groupBy(filtered, (t) => t.category);
               return ListView(
+                padding: const EdgeInsets.only(bottom: 24),
                 children: [
+                  AppRow(
+                    dense: true,
+                    leading: IconTile(
+                      Icons.add_rounded,
+                      size: 36,
+                      background: theme.colorScheme.primaryContainer,
+                      foreground: theme.colorScheme.onPrimaryContainer,
+                    ),
+                    title: query.isEmpty
+                        ? 'Créer un nouveau type'
+                        : 'Créer « $query »',
+                    titleStyle: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    chevron: false,
+                    onTap: _create,
+                  ),
+                  if (filtered.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                      child: Text(
+                        'Aucun type ne correspond. Créez-le pour l’utiliser '
+                        'tout de suite.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                   for (final category in DocumentCategory.values)
                     if (byCategory[category] != null) ...[
-                      SectionHeader(
+                      SectionTitle(
                         category.label,
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                        padding: const EdgeInsets.fromLTRB(20, 18, 12, 2),
                       ),
                       for (final t in byCategory[category]!)
-                        ListTile(
-                          leading: Icon(documentCategoryIcon(t.category)),
-                          title: Text(t.name),
-                          subtitle: t.isCustom
-                              ? const Text('Type personnalisé')
-                              : null,
+                        AppRow(
+                          dense: true,
+                          leading: CategoryAvatar(t.category, size: 36),
+                          title: t.name,
+                          subtitle: t.isCustom ? 'Type personnalisé' : null,
+                          chevron: false,
                           trailing: t.id == widget.selectedId
                               ? Icon(
-                                  Icons.check,
+                                  Icons.check_rounded,
                                   color: theme.colorScheme.primary,
                                   semanticLabel: 'Sélectionné',
                                 )
@@ -196,7 +203,8 @@ class _CreateTypeDialogState extends ConsumerState<_CreateTypeDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Nouveau type de document'),
+      title: const Text('Nouveau type'),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       content: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -209,7 +217,8 @@ class _CreateTypeDialogState extends ConsumerState<_CreateTypeDialog> {
                 textCapitalization: TextCapitalization.sentences,
                 maxLength: 120,
                 decoration: const InputDecoration(
-                  labelText: 'Nom du type *',
+                  counterText: '',
+                  labelText: 'Nom',
                   hintText: 'ex. Attestation de stage',
                 ),
                 validator: (v) => (v == null || v.trim().isEmpty)
@@ -230,7 +239,7 @@ class _CreateTypeDialogState extends ConsumerState<_CreateTypeDialog> {
               const SizedBox(height: 8),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text("Ce document a une date d'expiration"),
+                title: const Text('A une date d’expiration'),
                 value: _expiry,
                 onChanged: (v) => setState(() => _expiry = v),
               ),
@@ -244,6 +253,7 @@ class _CreateTypeDialogState extends ConsumerState<_CreateTypeDialog> {
           child: const Text('Annuler'),
         ),
         FilledButton(
+          style: FilledButton.styleFrom(minimumSize: const Size(64, 44)),
           onPressed: _saving ? null : _save,
           child: const Text('Créer'),
         ),

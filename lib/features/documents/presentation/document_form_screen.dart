@@ -158,20 +158,23 @@ class _DocumentFormScreenState extends ConsumerState<DocumentFormScreen> {
     setState(() => _saving = false);
     if (!ok) return;
     if (failedFiles.isNotEmpty) {
+      final n = failedFiles.length;
       showMessage(
         context,
-        'Document enregistré, mais ${failedFiles.length} fichier(s) '
-        "n'ont pas pu être copiés : ${failedFiles.join(', ')}.",
+        n == 1
+            ? 'Document enregistré, mais « ${failedFiles.single} » n’a pas pu '
+                  'être copié.'
+            : 'Document enregistré, mais $n fichiers n’ont pas pu être copiés.',
         error: true,
       );
     } else {
       showMessage(
         context,
         widget.isEditing
-            ? 'Document mis à jour.'
+            ? 'Document mis à jour'
             : widget.linkToItemId != null
-            ? 'Document ajouté et associé à la pièce.'
-            : 'Document ajouté à votre bibliothèque.',
+            ? 'Document ajouté et associé à la pièce'
+            : 'Document ajouté',
       );
     }
     context.pop(savedId);
@@ -179,7 +182,6 @@ class _DocumentFormScreenState extends ConsumerState<DocumentFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -196,115 +198,120 @@ class _DocumentFormScreenState extends ConsumerState<DocumentFormScreen> {
           : Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 children: [
-                  _TypeField(
-                    type: _type,
-                    errorText: _typeError,
-                    onTap: _pickType,
-                  ),
-                  formGap,
-                  TextFormField(
-                    controller: _customName,
-                    textCapitalization: TextCapitalization.sentences,
-                    maxLength: 120,
-                    decoration: InputDecoration(
-                      labelText: 'Nom personnalisé (facultatif)',
-                      hintText: _type == null
-                          ? 'ex. Passeport renouvelé en 2025'
-                          : 'Par défaut : ${_type!.name}',
-                      helperText:
-                          'Utile pour distinguer deux documents du même type.',
-                    ),
-                  ),
-                  formGap,
-                  DateField(
-                    label: 'Date de délivrance (facultative)',
-                    initialValue: _issueDate,
-                    lastDate: DateTime.now().add(const Duration(days: 1)),
-                    onChanged: (d) => setState(() => _issueDate = d),
-                  ),
-                  formGap,
-                  DateField(
-                    label: "Date d'expiration (facultative)",
-                    initialValue: _expiryDate,
-                    helperText: (_type?.expiryApplicable ?? false)
-                        ? "Ce type de document expire généralement : indiquez la date pour recevoir un rappel."
-                        : null,
-                    onChanged: (d) => setState(() => _expiryDate = d),
-                    validator: (d) {
-                      if (d != null &&
-                          _issueDate != null &&
-                          d.isBefore(_issueDate!)) {
-                        return "La date d'expiration doit suivre la date de délivrance.";
-                      }
-                      return null;
-                    },
-                  ),
-                  formGap,
-                  TextFormField(
-                    controller: _issuer,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      labelText: 'Autorité émettrice (facultative)',
-                      hintText: 'ex. Mairie de Cotonou',
-                    ),
-                  ),
-                  formGap,
-                  TextFormField(
-                    controller: _notes,
-                    textCapitalization: TextCapitalization.sentences,
-                    minLines: 3,
-                    maxLines: 6,
-                    decoration: const InputDecoration(
-                      labelText: 'Notes personnelles (facultatives)',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                  if (!widget.isEditing) ...[
-                    SectionHeader(
-                      'Fichier joint (facultatif)',
-                      padding: const EdgeInsets.fromLTRB(0, 24, 0, 4),
-                    ),
-                    Text(
-                      'Vous pouvez enregistrer ce document sans fichier '
-                      'numérique. Les fichiers restent dans l’espace privé '
-                      'de l’application.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                  FormSection(
+                    title: 'Document',
+                    children: [
+                      _TypeField(
+                        type: _type,
+                        errorText: _typeError,
+                        onTap: _pickType,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    for (final f in _pendingFiles)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.insert_drive_file_outlined),
-                        title: Text(f.name, overflow: TextOverflow.ellipsis),
-                        trailing: IconButton(
-                          tooltip: 'Retirer ${f.name}',
-                          icon: const Icon(Icons.close),
-                          onPressed: () =>
-                              setState(() => _pendingFiles.remove(f)),
+                      TextFormField(
+                        controller: _customName,
+                        textCapitalization: TextCapitalization.sentences,
+                        maxLength: 120,
+                        decoration: InputDecoration(
+                          counterText: '',
+                          labelText: 'Nom personnalisé (facultatif)',
+                          hintText: _type == null
+                              ? 'ex. Passeport renouvelé en 2025'
+                              : 'Par défaut : ${_type!.name}',
                         ),
                       ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed: _addFile,
-                        icon: const Icon(Icons.attach_file),
-                        label: const Text('Joindre un PDF ou une image'),
+                    ],
+                  ),
+                  FormSection(
+                    title: 'Dates',
+                    children: [
+                      DateField(
+                        label: 'Date de délivrance',
+                        initialValue: _issueDate,
+                        lastDate: DateTime.now().add(const Duration(days: 1)),
+                        onChanged: (d) => setState(() => _issueDate = d),
                       ),
-                    ),
-                  ] else ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Les fichiers joints se gèrent depuis la fiche du document.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      DateField(
+                        label: "Date d'expiration",
+                        initialValue: _expiryDate,
+                        helperText: (_type?.expiryApplicable ?? false)
+                            ? 'Pour être prévenu avant qu’il expire.'
+                            : null,
+                        onChanged: (d) => setState(() => _expiryDate = d),
+                        validator: (d) {
+                          if (d != null &&
+                              _issueDate != null &&
+                              d.isBefore(_issueDate!)) {
+                            return "L'expiration doit suivre la délivrance.";
+                          }
+                          return null;
+                        },
                       ),
+                    ],
+                  ),
+                  FormSection(
+                    title: 'Précisions',
+                    children: [
+                      TextFormField(
+                        controller: _issuer,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: const InputDecoration(
+                          labelText: 'Autorité émettrice',
+                          hintText: 'ex. Mairie de Cotonou',
+                        ),
+                      ),
+                      TextFormField(
+                        controller: _notes,
+                        textCapitalization: TextCapitalization.sentences,
+                        minLines: 3,
+                        maxLines: 6,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (!widget.isEditing)
+                    FormSection(
+                      title: 'Fichier (facultatif)',
+                      children: [
+                        if (_pendingFiles.isNotEmpty)
+                          ListGroup(
+                            children: [
+                              for (final f in _pendingFiles)
+                                AppRow(
+                                  dense: true,
+                                  leading: IconTile(
+                                    attachmentIcon(
+                                      mimeTypeForExtension(
+                                        f.name.split('.').last,
+                                      ),
+                                    ),
+                                    size: 36,
+                                  ),
+                                  title: f.name,
+                                  trailing: IconButton(
+                                    tooltip: 'Retirer ${f.name}',
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: () => setState(
+                                      () => _pendingFiles.remove(f),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        OutlinedButton.icon(
+                          onPressed: _addFile,
+                          icon: const Icon(Icons.attach_file_rounded),
+                          label: Text(
+                            _pendingFiles.isEmpty
+                                ? 'Joindre un PDF ou une photo'
+                                : 'Joindre un autre fichier',
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                  const SizedBox(height: 24),
                 ],
               ),
             ),
@@ -312,6 +319,7 @@ class _DocumentFormScreenState extends ConsumerState<DocumentFormScreen> {
   }
 }
 
+/// Choix du type, présenté comme un champ rempli.
 class _TypeField extends StatelessWidget {
   const _TypeField({required this.type, required this.onTap, this.errorText});
 
@@ -328,16 +336,19 @@ class _TypeField extends StatelessWidget {
       excludeSemantics: true,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: InputDecorator(
           isEmpty: type == null,
           decoration: InputDecoration(
-            labelText: 'Type de document *',
+            labelText: 'Type de document',
             errorText: errorText,
             prefixIcon: type == null
-                ? null
-                : Icon(documentCategoryIcon(type!.category)),
-            suffixIcon: const Icon(Icons.arrow_drop_down),
+                ? const Icon(Icons.category_outlined)
+                : Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: CategoryAvatar(type!.category, size: 30),
+                  ),
+            suffixIcon: const Icon(Icons.expand_more_rounded),
             helperText: type?.category.label,
           ),
           child: Text(type?.name ?? ''),

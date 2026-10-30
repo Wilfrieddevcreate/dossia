@@ -1,10 +1,11 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router.dart';
-import '../../../app/theme/status_colors.dart';
+import '../../../app/theme/app_theme.dart';
 import '../../../core/utils/dates.dart';
 import '../../../core/utils/today_provider.dart';
 import '../../../core/widgets/common.dart';
@@ -67,10 +68,9 @@ class _RequirementDetailView extends ConsumerWidget {
       context,
       title: 'Retirer cette pièce ?',
       message:
-          '« ${view.displayName} » sera retirée du dossier '
-          '« ${overview.dossier.title} ».\n\nLes documents associés restent '
-          'dans votre bibliothèque et dans vos autres dossiers.',
-      confirmLabel: 'Retirer la pièce',
+          '« ${view.displayName} » sera retirée de « ${overview.dossier.title} ». '
+          'Les documents associés restent dans votre bibliothèque.',
+      confirmLabel: 'Retirer',
       destructive: true,
     );
     if (!confirmed || !context.mounted) return;
@@ -79,7 +79,7 @@ class _RequirementDetailView extends ConsumerWidget {
       () => ref.read(requirementsRepositoryProvider).deleteRequirement(view.id),
     );
     if (ok && context.mounted) {
-      showMessage(context, 'Pièce retirée du dossier.');
+      showMessage(context, 'Pièce retirée');
       context.pop();
     }
   }
@@ -89,12 +89,13 @@ class _RequirementDetailView extends ConsumerWidget {
     WidgetRef ref,
     DocumentView document,
   ) async {
+    HapticFeedback.lightImpact();
     await runGuarded(
       context,
       () => ref
           .read(requirementsRepositoryProvider)
           .linkDocument(itemId: view.id, documentId: document.id),
-      success: '« ${document.displayName} » associé à la pièce.',
+      success: '« ${document.displayName} » associé',
     );
   }
 
@@ -103,20 +104,19 @@ class _RequirementDetailView extends ConsumerWidget {
     WidgetRef ref,
     LinkedDocument linked,
   ) async {
-    final confirmed = await showConfirmDialog(
-      context,
-      title: 'Retirer l’association ?',
-      message:
-          '« ${linked.displayName} » ne sera plus associé à cette pièce. '
-          'Le document reste dans votre bibliothèque et dans vos autres '
-          'dossiers.',
-      confirmLabel: 'Retirer',
-    );
-    if (!confirmed || !context.mounted) return;
+    final repo = ref.read(requirementsRepositoryProvider);
+    final quantity = linked.link.quantityAssigned;
     await runGuarded(
       context,
-      () => ref.read(requirementsRepositoryProvider).unlink(linked.link.id),
-      success: 'Association retirée.',
+      () => repo.unlink(linked.link.id),
+      success: 'Association retirée',
+      onUndo: () => repo
+          .linkDocument(
+            itemId: view.id,
+            documentId: linked.doc.id,
+            quantity: quantity,
+          )
+          .ignore(),
     );
   }
 
@@ -140,9 +140,8 @@ class _RequirementDetailView extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      showDragHandle: true,
       builder: (_) => FractionallySizedBox(
-        heightFactor: 0.85,
+        heightFactor: 0.88,
         child: _DocumentChooser(
           candidates: candidates,
           matchingTypeId: view.item.typeId,
@@ -169,294 +168,373 @@ class _RequirementDetailView extends ConsumerWidget {
                     !linkedIds.contains(d.id),
               )
               .toList();
+    final muted = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(view.displayName, overflow: TextOverflow.ellipsis),
-        actions: [
-          IconButton(
-            tooltip: 'Modifier la pièce',
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () =>
-                context.push(Routes.editItem(view.dossierId, view.id)),
-          ),
-          IconButton(
-            tooltip: 'Retirer la pièce du dossier',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => _delete(context, ref),
-          ),
-        ],
+    final details = <(String, String)>[
+      ('Exigence', e.isMandatory ? 'Obligatoire' : 'Facultative'),
+      (
+        'Quantité',
+        e.requiredQuantity == 1
+            ? '1 exemplaire'
+            : e.assignedQuantity == 0
+            ? '${e.requiredQuantity} exemplaires attendus'
+            : '${e.requiredQuantity} exemplaires · ${e.assignedQuantity} fourni${e.assignedQuantity > 1 ? 's' : ''}',
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-        children: [
-          Text(
-            overview.dossier.title,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(view.displayName, style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 12),
-          _StatusCard(item: item),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(
-                children: [
-                  _Line(
-                    icon: Icons.rule,
-                    text: e.isMandatory
-                        ? 'Pièce obligatoire'
-                        : 'Pièce facultative',
+      if (view.type != null && view.item.customName != null)
+        ('Type de document', view.type!.name),
+      if (view.item.dueDate != null)
+        (
+          'À fournir avant le',
+          '${formatLongDate(view.item.dueDate!)} · '
+              '${relativeDayLabel(view.item.dueDate!, reference: today)}',
+        ),
+      if (view.item.instructions != null)
+        ('Instructions', view.item.instructions!),
+      if (view.item.notes != null) ('Note', view.item.notes!),
+    ];
+
+    return DetailScaffold(
+      title: view.displayName,
+      actions: [
+        IconButton(
+          tooltip: 'Modifier la pièce',
+          icon: const Icon(Icons.edit_outlined),
+          onPressed: () =>
+              context.push(Routes.editItem(view.dossierId, view.id)),
+        ),
+        IconButton(
+          tooltip: 'Retirer la pièce du dossier',
+          icon: const Icon(Icons.delete_outline_rounded),
+          onPressed: () => _delete(context, ref),
+        ),
+      ],
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  overview.dossier.title,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
                   ),
-                  _Line(
-                    icon: Icons.content_copy_outlined,
-                    text: e.requiredQuantity > 1
-                        ? '${e.requiredQuantity} exemplaires attendus · ${e.assignedQuantity} associé(s)'
-                        : '1 exemplaire attendu',
-                  ),
-                  if (view.type != null && view.item.customName != null)
-                    _Line(
-                      icon: Icons.category_outlined,
-                      text: 'Type : ${view.type!.name}',
-                    ),
-                  if (view.item.dueDate != null)
-                    _Line(
-                      icon: Icons.event,
-                      text:
-                          'À fournir avant le ${formatLongDate(view.item.dueDate!)} '
-                          '(${relativeDayLabel(view.item.dueDate!, reference: today)})',
-                    ),
-                  if (view.item.instructions != null)
-                    _Line(
-                      icon: Icons.info_outline,
-                      text: view.item.instructions!,
-                    ),
-                  if (view.item.notes != null)
-                    _Line(icon: Icons.notes, text: view.item.notes!),
-                ],
-              ),
+                ),
+                const SizedBox(height: 6),
+                Text(view.displayName, style: theme.textTheme.headlineSmall),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ItemStatusChip(e.status),
+                    if (!e.isMandatory && e.status != ItemStatus.optional)
+                      const OptionalChip(),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Une condition reste à confirmer'),
-            subtitle: const Text(
-              'ex. copie certifiée, traduction, légalisation. La pièce reste '
-              '« À vérifier » tant que cette option est active.',
+        ),
+        // « Manquant » se suffit : la pastille et la liste ci-dessous le disent.
+        if (e.status != ItemStatus.missing)
+          SliverBox(child: _StatusNote(item: item)),
+        if (suggestions.isNotEmpty && view.links.isEmpty)
+          SliverBox(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              e.status == ItemStatus.missing ? 0 : 16,
+              16,
+              0,
             ),
-            value: view.flaggedToVerify,
-            onChanged: (v) => runGuarded(
-              context,
-              () => ref
-                  .read(requirementsRepositoryProvider)
-                  .setFlaggedToVerify(view.id, v),
+            child: _SuggestionPanel(
+              title: 'Vous avez déjà ce document',
+              suggestions: suggestions,
+              onLink: (d) => _link(context, ref, d),
             ),
           ),
-          SectionHeader(
-            'Documents associés',
-            padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+        const SliverToBoxAdapter(child: SectionTitle('Documents associés')),
+        if (view.links.isEmpty &&
+            suggestions.isEmpty &&
+            view.item.typeId != null)
+          SliverBox(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Text(
+              'Aucun document de ce type dans votre bibliothèque.',
+              style: muted,
+            ),
           ),
-          if (view.links.isEmpty)
-            Text(
-              'Aucun document associé pour le moment.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            )
-          else
-            Card(
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  for (final l in view.links)
-                    _LinkedDocumentTile(
-                      linked: l,
-                      showQuantity: view.item.quantity > 1,
-                      onOpen: () => context.push(Routes.document(l.doc.id)),
-                      onUnlink: () => _unlink(context, ref, l),
-                      onQuantity: (q) => runGuarded(
-                        context,
-                        () => ref
-                            .read(requirementsRepositoryProvider)
-                            .updateLinkQuantity(l.link.id, q),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          if (suggestions.isNotEmpty) ...[
-            SectionHeader(
-              view.links.isEmpty
-                  ? 'Vous avez déjà ce document'
-                  : 'Autres documents correspondants',
-              padding: const EdgeInsets.fromLTRB(0, 20, 0, 8),
-            ),
-            Card(
-              child: Column(
-                children: [
-                  for (final s in suggestions)
-                    ListTile(
-                      leading: Icon(documentCategoryIcon(s.category)),
-                      title: Text(s.displayName),
-                      subtitle: s.doc.expiryDate == null
-                          ? null
-                          : Text(
-                              'Expire le ${formatShortDate(s.doc.expiryDate!)}',
-                            ),
-                      trailing: FilledButton.tonal(
-                        onPressed: () => _link(context, ref, s),
-                        child: const Text('Associer'),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Vérifiez que le document convient avant de l’associer.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ] else if (view.links.isEmpty && view.item.typeId != null) ...[
-            const SizedBox(height: 12),
-            InfoBanner(
-              message:
-                  'Aucun document de ce type dans votre bibliothèque. '
-                  'Ajoutez-le si vous le possédez ; sinon la pièce reste '
-                  'manquante.',
-            ),
-          ],
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
+        SliverBox(
+          child: ListGroup(
             children: [
-              FilledButton.icon(
-                onPressed: () => context.push(
+              for (final l in view.links)
+                _LinkedDocumentTile(
+                  linked: l,
+                  showQuantity: view.item.quantity > 1,
+                  onOpen: () => context.push(Routes.document(l.doc.id)),
+                  onUnlink: () => _unlink(context, ref, l),
+                  onQuantity: (q) => runGuarded(
+                    context,
+                    () => ref
+                        .read(requirementsRepositoryProvider)
+                        .updateLinkQuantity(l.link.id, q),
+                  ),
+                ),
+              _ActionRow(
+                icon: Icons.link_rounded,
+                label: 'Associer un document',
+                onTap: () => _chooseDocument(context, ref, documents),
+              ),
+              _ActionRow(
+                icon: Icons.add_rounded,
+                label: 'Nouveau document',
+                onTap: () => context.push(
                   Routes.newDocument(
                     typeId: view.item.typeId,
                     linkItemId: view.id,
                   ),
                 ),
-                icon: const Icon(Icons.add),
-                label: const Text('Ajouter un nouveau document'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _chooseDocument(context, ref, documents),
-                icon: const Icon(Icons.link),
-                label: const Text('Associer un document existant'),
               ),
             ],
           ),
+        ),
+        if (suggestions.isNotEmpty && view.links.isNotEmpty) ...[
+          const SliverToBoxAdapter(
+            child: SectionTitle('Autres documents correspondants'),
+          ),
+          SliverBox(
+            child: _SuggestionPanel(
+              suggestions: suggestions,
+              onLink: (d) => _link(context, ref, d),
+            ),
+          ),
         ],
-      ),
+        const SliverToBoxAdapter(child: SectionTitle('Détails')),
+        SliverBox(
+          child: ListGroup(
+            dividerIndent: 16,
+            children: [
+              for (final (label, value) in details)
+                _InfoRow(label: label, value: value),
+            ],
+          ),
+        ),
+        SliverBox(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+          child: Panel(
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 4,
+              ),
+              title: const Text('Une condition reste à confirmer'),
+              subtitle: const Text('Copie certifiée, traduction, légalisation…'),
+              value: view.flaggedToVerify,
+              onChanged: (v) {
+                HapticFeedback.selectionClick();
+                runGuarded(
+                  context,
+                  () => ref
+                      .read(requirementsRepositoryProvider)
+                      .setFlaggedToVerify(view.id, v),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.item});
+/// Explication du statut, teintée comme lui, avec les raisons éventuelles.
+class _StatusNote extends StatelessWidget {
+  const _StatusNote({required this.item});
 
   final EvaluatedRequirement item;
 
   @override
   Widget build(BuildContext context) {
-    final colors = StatusColors.of(context);
+    final c = StatusColors.of(context);
     final e = item.evaluation;
     final (bg, fg) = switch (e.status) {
-      ItemStatus.available => (colors.success, colors.onSuccess),
-      ItemStatus.toVerify => (colors.warning, colors.onWarning),
-      ItemStatus.missing || ItemStatus.toRenew => (colors.danger, colors.onDanger),
-      ItemStatus.optional => (colors.neutral, colors.onNeutral),
+      ItemStatus.available => (c.success, c.onSuccess),
+      ItemStatus.toVerify => (c.warning, c.onWarning),
+      ItemStatus.toRenew => (c.danger, c.onDanger),
+      ItemStatus.missing || ItemStatus.optional => (c.neutral, c.onNeutral),
     };
     final explanation = switch (e.status) {
-      ItemStatus.missing =>
-        'Aucun document n’est associé à cette pièce obligatoire.',
+      ItemStatus.missing => 'Aucun document n’est encore associé.',
       ItemStatus.optional =>
-        'Pièce facultative sans document associé : elle ne réduit pas la '
-            'progression.',
+        'Pièce facultative : elle ne compte pas dans la progression.',
       ItemStatus.available =>
         'Document associé et déclaré disponible. Dossia ne certifie pas sa '
             'conformité.',
       ItemStatus.toRenew =>
-        'Un document associé est expiré. Renouvelez-le ou associez-en un '
+        'Un document associé a expiré : renouvelez-le ou associez-en un '
             'autre.',
-      ItemStatus.toVerify => 'Un point reste à confirmer :',
+      ItemStatus.toVerify => 'Plusieurs points restent à confirmer :',
     };
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-      ),
+    final reasons = [
+      for (final r in e.reasons)
+        verifyReasonLabel(
+          r,
+          assigned: e.assignedQuantity,
+          required: e.requiredQuantity,
+        ),
+    ];
+    // Une seule raison : elle suffit comme explication.
+    final message = e.status == ItemStatus.toVerify && reasons.length == 1
+        ? '${reasons.single}.'
+        : [explanation, for (final r in reasons) '• $r'].join('\n');
+    return InfoBanner(
+      icon: itemStatusIcon(e.status),
+      background: bg,
+      foreground: fg,
+      message: message,
+    );
+  }
+}
+
+/// Documents de la bibliothèque qui correspondent au type de la pièce.
+class _SuggestionPanel extends StatelessWidget {
+  const _SuggestionPanel({
+    required this.suggestions,
+    required this.onLink,
+    this.title,
+  });
+
+  final List<DocumentView> suggestions;
+  final ValueChanged<DocumentView> onLink;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              ExcludeSemantics(child: Icon(itemStatusIcon(e.status), color: fg)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  e.status.label,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(color: fg),
-                ),
-              ),
-            ],
-          ),
-          if (!e.isMandatory && e.status != ItemStatus.optional) ...[
-            const SizedBox(height: 6),
-            const OptionalChip(),
-          ],
-          const SizedBox(height: 6),
-          Text(explanation, style: TextStyle(color: fg)),
-          for (final r in e.reasons)
+          if (title != null)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                '• ${verifyReasonLabel(r, assigned: e.assignedQuantity, required: e.requiredQuantity)}',
-                style: TextStyle(color: fg),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+              child: Row(
+                children: [
+                  IconTile(
+                    Icons.inventory_2_outlined,
+                    size: 36,
+                    background: theme.colorScheme.primaryContainer,
+                    foreground: theme.colorScheme.onPrimaryContainer,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title!, style: theme.textTheme.titleMedium),
+                        Text(
+                          'Vérifiez qu’il convient, puis associez-le.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
+          for (var i = 0; i < suggestions.length; i++) ...[
+            if (i > 0) const Divider(indent: 70, endIndent: 16),
+            AppRow(
+              leading: CategoryAvatar(suggestions[i].category),
+              title: suggestions[i].displayName,
+              subtitle: suggestions[i].doc.expiryDate == null
+                  ? suggestions[i].type.name
+                  : 'Expire le ${formatCompactDate(suggestions[i].doc.expiryDate!)}',
+              chevron: false,
+              trailing: FilledButton.tonal(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(48, 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                onPressed: () => onLink(suggestions[i]),
+                child: const Text('Associer'),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _Line extends StatelessWidget {
-  const _Line({required this.icon, required this.text});
+/// Ligne d'action en couleur d'accent, en fin de liste.
+class _ActionRow extends StatelessWidget {
+  const _ActionRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   final IconData icon;
-  final String text;
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ExcludeSemantics(
-            child: Icon(
-              icon,
-              size: 20,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+    return AppRow(
+      dense: true,
+      leading: IconTile(
+        icon,
+        size: 42,
+        background: theme.colorScheme.primaryContainer,
+        foreground: theme.colorScheme.onPrimaryContainer,
+      ),
+      title: label,
+      titleStyle: theme.textTheme.bodyLarge?.copyWith(
+        color: theme.colorScheme.primary,
+        fontWeight: FontWeight.w700,
+      ),
+      chevron: false,
+      onTap: onTap,
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      label: '$label : $value',
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: theme.textTheme.bodySmall),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
-        ],
+        ),
       ),
     );
   }
@@ -479,71 +557,51 @@ class _LinkedDocumentTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final today = ref.watch(todayProvider);
     final expiry = expiryStateOf(linked.doc.expiryDate, today);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: onOpen,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        linked.displayName,
-                        style: theme.textTheme.titleSmall,
-                      ),
-                      Text(
-                        [
-                          linked.docType.name,
-                          if (linked.doc.expiryDate != null)
-                            'expire le ${formatShortDate(linked.doc.expiryDate!)}',
-                        ].join(' · '),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Retirer l’association avec ${linked.displayName}',
-                icon: const Icon(Icons.link_off),
-                onPressed: onUnlink,
-              ),
-            ],
+    final flagged =
+        linked.isArchived ||
+        expiry == ExpiryState.expired ||
+        expiry == ExpiryState.expiringSoon;
+    final subtitle = [
+      if (linked.displayName != linked.docType.name) linked.docType.name,
+      if (linked.doc.expiryDate != null && !flagged)
+        'Expire le ${formatCompactDate(linked.doc.expiryDate!)}',
+    ].join(' · ');
+    return Column(
+      children: [
+        AppRow(
+          onTap: onOpen,
+          chevron: false,
+          leading: CategoryAvatar(linked.docType.category),
+          title: linked.displayName,
+          subtitle: subtitle.isEmpty ? null : subtitle,
+          subtitleWidget: flagged
+              ? Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    if (linked.isArchived) const ArchivedChip(),
+                    ExpiryChip(expiry),
+                  ],
+                )
+              : null,
+          trailing: IconButton(
+            tooltip: 'Retirer l’association avec ${linked.displayName}',
+            icon: const Icon(Icons.link_off_rounded),
+            onPressed: onUnlink,
           ),
-          if (linked.isArchived ||
-              expiry == ExpiryState.expired ||
-              expiry == ExpiryState.expiringSoon)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Wrap(
-                spacing: 6,
-                children: [
-                  if (linked.isArchived) const ArchivedChip(),
-                  ExpiryChip(expiry),
-                ],
-              ),
+        ),
+        if (showQuantity)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(72, 0, 12, 12),
+            child: QuantityStepper(
+              label: 'Exemplaires',
+              value: linked.link.quantityAssigned,
+              onChanged: onQuantity,
             ),
-          if (showQuantity)
-            Padding(
-              padding: const EdgeInsets.only(top: 4, right: 12),
-              child: QuantityStepper(
-                label: 'Exemplaires fournis',
-                value: linked.link.quantityAssigned,
-                onChanged: onQuantity,
-              ),
-            ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }
@@ -559,55 +617,62 @@ class _DocumentChooser extends StatefulWidget {
 }
 
 class _DocumentChooserState extends State<_DocumentChooser> {
-  String _query = '';
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final visible = widget.candidates.where((d) => d.matches(_query)).toList();
+    final visible = widget.candidates
+        .where((d) => d.matches(_search.text))
+        .toList();
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Associer un document',
-              style: theme.textTheme.titleLarge,
-            ),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Text(
+            'Associer un document',
+            style: theme.textTheme.titleLarge,
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: TextField(
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Rechercher dans la bibliothèque',
-            ),
-            onChanged: (v) => setState(() => _query = v),
+          child: SearchField(
+            controller: _search,
+            hint: 'Rechercher dans la bibliothèque',
+            onChanged: (_) => setState(() {}),
           ),
         ),
         const SizedBox(height: 8),
         Expanded(
           child: visible.isEmpty
               ? const EmptyState(
-                  icon: Icons.search_off,
+                  icon: Icons.search_off_rounded,
                   title: 'Aucun document disponible',
                   message:
-                      'Tous vos documents actifs sont déjà associés, ou aucun '
-                      'ne correspond à la recherche.',
+                      'Vos documents actifs sont déjà associés, ou aucun ne '
+                      'correspond à la recherche.',
                 )
               : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 24),
                   itemCount: visible.length,
                   itemBuilder: (context, i) {
                     final d = visible[i];
                     final match = d.type.id == widget.matchingTypeId;
-                    return ListTile(
-                      leading: Icon(documentCategoryIcon(d.category)),
-                      title: Text(d.displayName),
-                      subtitle: Text(
-                        match ? '${d.type.name} · même type' : d.type.name,
-                      ),
+                    return AppRow(
+                      dense: true,
+                      leading: CategoryAvatar(d.category, size: 38),
+                      title: d.displayName,
+                      subtitle: match
+                          ? '${d.type.name} · même type'
+                          : d.type.name,
+                      chevron: false,
                       onTap: () => Navigator.of(context).pop(d),
                     );
                   },

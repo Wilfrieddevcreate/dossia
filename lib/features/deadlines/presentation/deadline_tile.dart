@@ -3,10 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../app/router.dart';
+import '../../../app/theme/app_theme.dart';
 import '../../../core/utils/dates.dart';
+import '../../../core/widgets/common.dart';
 import '../domain/deadline_models.dart';
 
-/// Ligne d'échéance avec date, nature et délai restant.
+/// Ligne d'échéance : date, objet, contexte et délai restant.
 class DeadlineTile extends StatelessWidget {
   const DeadlineTile({super.key, required this.entry, required this.today});
 
@@ -23,65 +25,106 @@ class DeadlineTile extends StatelessWidget {
     }
   }
 
+  String get _context {
+    final ctx = entry.context;
+    return switch (entry.kind) {
+      DeadlineKind.dossier => 'Date limite du dossier',
+      DeadlineKind.documentExpiry =>
+        ctx == null || ctx == entry.title ? 'Expiration' : 'Expiration · $ctx',
+      DeadlineKind.task => ctx == null ? 'Tâche' : 'Tâche · $ctx',
+      DeadlineKind.item => ctx == null ? 'Pièce' : 'Pièce · $ctx',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final overdue = entry.isOverdue(today);
+    final status = StatusColors.of(context);
     final days = daysBetween(today, entry.date);
-    final accent = overdue
-        ? theme.colorScheme.error
-        : days <= 7
+    final overdue = days < 0;
+    final soon = !overdue && days <= 7;
+    final relative = overdue
+        ? 'en retard'
+        : days == 0
+        ? "aujourd'hui"
+        : days == 1
+        ? 'demain'
+        : 'dans $days j';
+    final relativeColor = overdue
+        ? status.dangerIcon
+        : soon
         ? theme.colorScheme.primary
         : theme.colorScheme.onSurfaceVariant;
-    final relative = overdue
-        ? 'Dépassée ${relativeDayLabel(entry.date, reference: today)}'
-        : relativeDayLabel(entry.date, reference: today);
-    return ListTile(
-      onTap: () => _open(context),
-      leading: Semantics(
-        excludeSemantics: true,
-        child: Container(
-          width: 52,
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: accent),
-          ),
-          // Réduit le contenu plutôt que de déborder avec un grand texte.
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${entry.date.day}',
-                  style: theme.textTheme.titleMedium?.copyWith(color: accent),
-                ),
-                Text(
-                  DateFormat('MMM', 'fr_FR').format(entry.date),
-                  style: theme.textTheme.labelSmall?.copyWith(color: accent),
-                ),
-              ],
-            ),
+
+    return Semantics(
+      button: true,
+      label:
+          '${entry.title}, $_context, ${formatLongDate(entry.date)}, '
+          '${overdue ? 'en retard de ${-days} jours' : relativeDayLabel(entry.date, reference: today)}',
+      excludeSemantics: true,
+      child: AppRow(
+        onTap: () => _open(context),
+        chevron: false,
+        leading: _DateBadge(date: entry.date, overdue: overdue),
+        title: entry.title,
+        subtitle: _context,
+        trailing: Text(
+          relative,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: relativeColor,
+            fontWeight: overdue || soon ? FontWeight.w800 : FontWeight.w600,
           ),
         ),
       ),
-      title: Text(entry.title),
-      subtitle: Text(
-        [
-          entry.kind.label,
-          ?entry.context,
-          '${formatShortDate(entry.date)} · $relative',
-        ].join('\n'),
+    );
+  }
+}
+
+class _DateBadge extends StatelessWidget {
+  const _DateBadge({required this.date, required this.overdue});
+
+  final DateTime date;
+  final bool overdue;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final status = StatusColors.of(context);
+    final palette = AppPalette.of(context);
+    final fg = overdue ? status.onDanger : theme.colorScheme.onSurface;
+    return Container(
+      width: 46,
+      height: 50,
+      decoration: BoxDecoration(
+        color: overdue ? status.danger : palette.muted,
+        borderRadius: BorderRadius.circular(14),
       ),
-      isThreeLine: true,
-      trailing: overdue
-          ? Icon(
-              Icons.warning_amber_rounded,
-              color: theme.colorScheme.error,
-              semanticLabel: 'Échéance dépassée',
-            )
-          : null,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                DateFormat('MMM', 'fr_FR').format(date).replaceAll('.', ''),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: overdue ? fg : theme.colorScheme.onSurfaceVariant,
+                  fontSize: 11,
+                ),
+              ),
+              Text(
+                '${date.day}',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: fg,
+                  fontWeight: FontWeight.w800,
+                  height: 1.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

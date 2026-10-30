@@ -12,6 +12,7 @@ class HomeShell extends StatelessWidget {
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: NavigationBar(
+        key: const ValueKey('main-navigation'),
         selectedIndex: navigationShell.currentIndex,
         onDestinationSelected: (index) => navigationShell.goBranch(
           index,
@@ -20,22 +21,22 @@ class HomeShell extends StatelessWidget {
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
+            selectedIcon: Icon(Icons.home_rounded),
             label: 'Accueil',
           ),
           NavigationDestination(
             icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
+            selectedIcon: Icon(Icons.folder_rounded),
             label: 'Dossiers',
           ),
           NavigationDestination(
             icon: Icon(Icons.description_outlined),
-            selectedIcon: Icon(Icons.description),
+            selectedIcon: Icon(Icons.description_rounded),
             label: 'Documents',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
+            selectedIcon: Icon(Icons.settings_rounded),
             label: 'Réglages',
           ),
         ],

@@ -34,6 +34,14 @@ String formatLongDate(DateTime value) => _longDate.format(value);
 
 String formatShortDate(DateTime value) => _shortDate.format(value);
 
+final _dayMonth = DateFormat('d MMM', 'fr_FR');
+
+/// Date courte pour l'interface : l'année n'est indiquée que si elle diffère
+/// de l'année en cours (« 2 déc. », « 14 mars 2027 »).
+String formatCompactDate(DateTime value) => value.year == DateTime.now().year
+    ? _dayMonth.format(value)
+    : _shortDate.format(value);
+
 String formatDateTime(DateTime value) => _dateTime.format(value.toLocal());
 
 /// Formulation relative d'une échéance : « aujourd'hui », « dans 3 jours »,

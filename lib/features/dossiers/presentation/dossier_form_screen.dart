@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router.dart';
+import '../../../app/theme/app_theme.dart';
 import '../../../core/models/dossier_category.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/form_fields.dart';
@@ -91,111 +93,182 @@ class _DossierFormScreenState extends ConsumerState<DossierFormScreen> {
     setState(() => _saving = false);
     if (!ok) return;
     if (createdId != null) {
-      showMessage(context, 'Dossier créé. Ajoutez maintenant les pièces.');
+      showMessage(context, 'Dossier créé · ajoutez maintenant les pièces');
       context.pushReplacement(Routes.dossier(createdId!));
     } else {
-      showMessage(context, 'Dossier mis à jour.');
+      showMessage(context, 'Dossier mis à jour');
       context.pop();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isEditing ? 'Modifier le dossier' : 'Nouveau dossier'),
-      ),
-      bottomNavigationBar: FormSaveBar(
-        label: widget.isEditing ? 'Enregistrer' : 'Créer le dossier',
-        busy: _saving,
-        onPressed: _loaded ? _save : null,
-      ),
-      body: !_loaded
-          ? const Center(child: CircularProgressIndicator())
-          : Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
+    final theme = Theme.of(context);
+    final heading = widget.isEditing ? 'Modifier le dossier' : 'Nouveau dossier';
+    return Form(
+      key: _formKey,
+      child: DetailScaffold(
+        title: heading,
+        bottomBar: FormSaveBar(
+          label: widget.isEditing ? 'Enregistrer' : 'Créer le dossier',
+          busy: _saving,
+          onPressed: _loaded ? _save : null,
+        ),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Semantics(
+                header: true,
+                child: Text(heading, style: theme.textTheme.headlineMedium),
+              ),
+            ),
+          ),
+          if (!_loaded)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              sliver: SliverList.list(
                 children: [
-                  TextFormField(
-                    controller: _title,
-                    autofocus: !widget.isEditing,
-                    textCapitalization: TextCapitalization.sentences,
-                    maxLength: 160,
-                    decoration: const InputDecoration(
-                      labelText: 'Nom du dossier *',
-                      hintText: 'ex. Visa France',
-                    ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Donnez un nom à votre dossier.'
-                        : null,
-                  ),
-                  if (!widget.isEditing) ...[
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        for (final e in _examples)
-                          ActionChip(
-                            label: Text(e),
-                            onPressed: () => setState(() => _title.text = e),
-                          ),
-                      ],
-                    ),
-                  ],
-                  formGap,
-                  DropdownButtonFormField<DossierCategory?>(
-                    isExpanded: true,
-                    initialValue: _category,
-                    decoration: const InputDecoration(
-                      labelText: 'Catégorie (facultative)',
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('Aucune'),
+                  FormSection(
+                    title: 'Dossier',
+                    children: [
+                      TextFormField(
+                        controller: _title,
+                        autofocus: !widget.isEditing,
+                        textCapitalization: TextCapitalization.sentences,
+                        maxLength: 160,
+                        decoration: const InputDecoration(
+                          labelText: 'Nom du dossier *',
+                          hintText: 'ex. Visa France',
+                          counterText: '',
+                        ),
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Donnez un nom à votre dossier.'
+                            : null,
                       ),
-                      for (final c in DossierCategory.values)
-                        DropdownMenuItem(value: c, child: Text(c.label)),
+                      if (!widget.isEditing)
+                        // Suggestions sur une ligne, défilant sous le champ.
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          clipBehavior: Clip.none,
+                          child: Row(
+                            children: [
+                              for (final e in _examples)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ActionChip(
+                                    label: Text(e),
+                                    onPressed: () {
+                                      HapticFeedback.selectionClick();
+                                      setState(() => _title.text = e);
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                     ],
-                    onChanged: (v) => setState(() => _category = v),
                   ),
-                  formGap,
-                  DateField(
-                    label: 'Date limite (facultative)',
-                    initialValue: _deadline,
-                    helperText:
-                        'Date de dépôt ou de rendez-vous. Vous recevrez un '
-                        'rappel si les notifications sont activées.',
-                    onChanged: (d) => setState(() => _deadline = d),
+                  FormSection(
+                    title: 'Catégorie',
+                    children: [
+                      _CategoryPicker(
+                        value: _category,
+                        onChanged: (c) => setState(() => _category = c),
+                      ),
+                    ],
                   ),
-                  formGap,
-                  TextFormField(
-                    controller: _description,
-                    textCapitalization: TextCapitalization.sentences,
-                    minLines: 2,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      labelText: 'Description (facultative)',
-                      alignLabelWithHint: true,
-                    ),
+                  FormSection(
+                    title: 'Échéance',
+                    children: [
+                      DateField(
+                        label: 'Date limite',
+                        initialValue: _deadline,
+                        helperText: 'Dépôt ou rendez-vous. Facultatif.',
+                        onChanged: (d) => setState(() => _deadline = d),
+                      ),
+                    ],
                   ),
-                  formGap,
-                  TextFormField(
-                    controller: _notes,
-                    textCapitalization: TextCapitalization.sentences,
-                    minLines: 3,
-                    maxLines: 8,
-                    decoration: const InputDecoration(
-                      labelText: 'Notes personnelles (facultatives)',
-                      hintText: 'Adresse du dépôt, contact, références…',
-                      alignLabelWithHint: true,
-                    ),
+                  FormSection(
+                    title: 'Notes',
+                    children: [
+                      TextFormField(
+                        controller: _description,
+                        textCapitalization: TextCapitalization.sentences,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          labelText: 'Description',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      TextFormField(
+                        controller: _notes,
+                        textCapitalization: TextCapitalization.sentences,
+                        minLines: 3,
+                        maxLines: 8,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes personnelles',
+                          hintText: 'Adresse du dépôt, contact, références…',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 24),
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Catégories en puces ; toucher la puce choisie la désélectionne.
+class _CategoryPicker extends StatelessWidget {
+  const _CategoryPicker({required this.value, required this.onChanged});
+
+  final DossierCategory? value;
+  final ValueChanged<DossierCategory?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = AppPalette.of(context);
+    // Pas d'espacement vertical supplémentaire : chaque puce garde déjà une
+    // zone tactile de 48 dp qui sépare les lignes.
+    return Wrap(
+      spacing: 8,
+      children: [
+        for (final c in DossierCategory.values)
+          ChoiceChip(
+            selected: c == value,
+            avatar: Icon(
+              dossierCategoryIcon(c),
+              size: 18,
+              color: c == value
+                  ? theme.colorScheme.surface
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            label: Text(c.label),
+            labelStyle: theme.textTheme.labelMedium?.copyWith(
+              fontSize: 13.5,
+              color: c == value
+                  ? theme.colorScheme.surface
+                  : theme.colorScheme.onSurface,
+            ),
+            backgroundColor: palette.muted,
+            onSelected: (_) {
+              HapticFeedback.selectionClick();
+              onChanged(c == value ? null : c);
+            },
+          ),
+      ],
     );
   }
 }

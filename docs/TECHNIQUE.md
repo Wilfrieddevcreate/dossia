@@ -27,7 +27,27 @@ Dossiers, Documents, Réglages). Les écrans de détail et les formulaires
 s'ouvrent au-dessus de la barre de navigation. Chemins dans
 `lib/app/router.dart` (`Routes`).
 
-## 2. Dépendances
+## 2. Interface
+
+- **Système de design** : `lib/app/theme/` (couleurs claires et sombres,
+  typographie Manrope, composants Material 3 ajustés) et
+  `lib/core/widgets/` (blocs `Panel`, listes groupées `ListGroup`, lignes
+  `AppRow`, titres de section, grand titre repliable, anneau de progression
+  animé, pastilles de statut, champs de formulaire). Les écrans n'utilisent
+  que ces briques, ce qui garde l'ensemble cohérent.
+- **Mouvement** : transitions de page Android (retour prédictif sur
+  Android 14+), anneaux et barres de progression animés, changement de statut
+  animé dans la liste de contrôle, retours haptiques sur les cases et
+  bascules, annulation possible des actions réversibles (archivage, retrait
+  d'une association).
+- **Lancement** : écran de démarrage aux couleurs de l'application (clair et
+  sombre), barres système transparentes, affichage bord à bord.
+- **Captures d'écran** : `flutter test --update-goldens tool/screenshots/`
+  rend chaque écran avec les vraies polices dans
+  `tool/screenshots/goldens/` (revue du design, fiche Google Play), sans
+  émulateur.
+
+## 3. Dépendances
 
 Versions figées par `pubspec.lock`.
 
@@ -47,10 +67,11 @@ Versions figées par `pubspec.lock`.
 | uuid | 4.6.0 | Identifiants |
 | drift_dev / build_runner (dev) | 2.35.2 / 2.15.1 | Génération de code drift |
 
-Police **Noto Sans** (licence SIL OFL 1.1, `assets/fonts/OFL.txt`) embarquée
-pour le PDF : génération hors ligne avec accents et typographie française.
+Polices embarquées (licence SIL OFL 1.1, `assets/fonts/OFL.txt`) :
+**Manrope** pour l'interface, **Noto Sans** pour le PDF (couverture étendue,
+y compris les caractères ɛ, ɔ, ɖ saisis dans les noms).
 
-## 3. Modèle de données
+## 4. Modèle de données
 
 Schéma v1, instantané : `drift_schemas/dossia/drift_schema_v1.json`.
 Définition : `lib/core/database/tables.dart`. Clés étrangères activées
@@ -76,7 +97,7 @@ La suppression d'un document lié à des pièces est refusée par la base
 (RESTRICT) : elle passe obligatoirement par le dépôt, qui retire les
 associations après confirmation de l'utilisateur. Aucune perte silencieuse.
 
-## 4. Règles métier
+## 5. Règles métier
 
 ### Statut d'une pièce (`features/requirements/domain/item_status.dart`)
 
@@ -121,7 +142,7 @@ chaque modification. Mode `inexactAllowWhileIdle` : aucune permission
 d'alarme exacte, Android peut décaler légèrement l'heure. Contenu masqué sur
 l'écran de verrouillage. Désactivés par défaut.
 
-## 5. Fichiers joints
+## 6. Fichiers joints
 
 - Copiés dans `getApplicationSupportDirectory()/attachments/<id document>/`,
   sous un nom généré. Jamais dans un répertoire public.
@@ -131,7 +152,7 @@ l'écran de verrouillage. Désactivés par défaut.
 - Les images s'affichent dans l'application ; les PDF s'ouvrent dans une
   application externe via le FileProvider d'`open_filex`.
 
-## 6. Récapitulatif PDF
+## 7. Récapitulatif PDF
 
 `lib/core/pdf/dossier_pdf_service.dart`. Construction en deux temps : un
 modèle de données pur (`buildDossierReport`, testé), puis le rendu dans un
@@ -141,7 +162,7 @@ seule couleur), pièces manquantes / à vérifier / à renouveler, notes
 facultatives, pied de page avec pagination et avertissement de non-
 certification. Les scans ne sont jamais inclus.
 
-## 7. Sauvegarde et restauration
+## 8. Sauvegarde et restauration
 
 `lib/core/backup/backup_service.dart` ; format documenté en tête du fichier.
 
@@ -157,7 +178,7 @@ certification. Les scans ne sont jamais inclus.
 - Une sauvegarde créée par une version plus récente du schéma est refusée.
 - Les archives temporaires et exports précédents sont effacés du cache.
 
-## 8. Sécurité et confidentialité
+## 9. Sécurité et confidentialité
 
 - Aucune permission Internet ni stockage dans le manifeste fusionné : seules
   `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`, `VIBRATE` (ajoutée par le
@@ -175,7 +196,7 @@ certification. Les scans ne sont jamais inclus.
   des applications et le chiffrement du téléphone. Les sauvegardes .zip sont
   lisibles par quiconque y accède ; l'interface le dit explicitement.
 
-## 9. Migrations
+## 10. Migrations
 
 - `AppDatabase.schemaVersion = 1`, instantané dans `drift_schemas/`.
 - `test/drift/dossia/migration_test.dart` vérifie que le schéma créé
@@ -190,7 +211,7 @@ certification. Les scans ne sont jamais inclus.
      `schemaVersion` du manifeste permet de convertir les anciennes
      sauvegardes).
 
-## 10. Compatibilité
+## 11. Compatibilité
 
 - `minSdk = 24` (Android 7.0) : minimum compatible avec l'ensemble des
   dépendances retenues ; `targetSdk` et `compileSdk` suivent Flutter 3.44.
@@ -198,7 +219,7 @@ certification. Les scans ne sont jamais inclus.
   412×915). **À valider sur un téléphone Android réel** (voir la recette).
 - Desugaring de la bibliothèque Java activé (requis par les notifications).
 
-## 11. Publication
+## 12. Publication
 
 - L'APK de test est signé avec la clé de debug. Pour Google Play : créer une
   clé (`keytool -genkey -v -keystore dossia.jks -keyalg RSA -keysize 2048

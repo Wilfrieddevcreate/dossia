@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:dossia/app/app.dart';
 import 'package:dossia/app/router.dart';
+import 'package:dossia/features/dashboard/presentation/dashboard_screen.dart';
+import 'package:dossia/features/onboarding/presentation/welcome_screen.dart';
 import 'package:dossia/core/database/app_database.dart';
 import 'package:dossia/core/database/database_provider.dart';
 import 'package:dossia/core/files/file_storage_service.dart';
@@ -148,15 +150,12 @@ void main() {
           textScale: scale,
           onboarded: false,
         );
-        expect(
-          find.text('Préparez vos dossiers sans oublier une seule pièce.'),
-          findsOneWidget,
-        );
+        expect(find.byType(WelcomeScreen), findsOneWidget);
         await _tap(tester, find.text('Commencer'));
         expect(find.text('Vos documents'), findsOneWidget);
 
         await _tap(tester, find.text('Passer'));
-        expect(find.text('Bonjour'), findsOneWidget);
+        expect(find.byType(DashboardScreen), findsOneWidget);
 
         final settings = await tester.runAsync(
           () => SettingsRepository(h.db).load(),
@@ -181,7 +180,7 @@ void main() {
         await _tap(tester, find.text('Passeport'));
         await _tap(tester, find.text('Acte de naissance'));
         await _tap(tester, find.text('Ajouter 2 documents'));
-        expect(find.text('Bonjour'), findsOneWidget);
+        expect(find.byType(DashboardScreen), findsOneWidget);
 
         await _tap(tester, find.text('Documents').last);
         expect(find.text('Passeport'), findsOneWidget);
@@ -255,7 +254,7 @@ void main() {
         await _reveal(tester, find.text('0 %'));
         expect(find.text('0 %'), findsOneWidget);
 
-        await _tap(tester, find.text('Passeport'));
+        await _tap(tester, find.text('Passeport').last);
         await _reveal(tester, find.text('Vous avez déjà ce document'));
         expect(find.text('Vous avez déjà ce document'), findsOneWidget);
         await _tap(tester, find.text('Associer'));

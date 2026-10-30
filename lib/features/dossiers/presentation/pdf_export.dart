@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme/app_theme.dart';
 import '../../../core/files/export_actions.dart';
 import '../../../core/pdf/dossier_pdf_service.dart';
 import '../../../core/widgets/common.dart';
@@ -15,9 +16,10 @@ Future<void> exportDossierPdf(
   WidgetRef ref,
   DossierOverview overview,
 ) async {
-  final choice = await showDialog<(_Destination, bool)>(
+  final choice = await showModalBottomSheet<(_Destination, bool)>(
     context: context,
-    builder: (context) => const _ExportDialog(),
+    useSafeArea: true,
+    builder: (context) => _ExportSheet(title: overview.dossier.title),
   );
   if (choice == null || !context.mounted) return;
   final (destination, includeNotes) = choice;
@@ -27,7 +29,7 @@ Future<void> exportDossierPdf(
   try {
     final bytes = await runWithProgress(
       context,
-      'Génération du récapitulatif…',
+      'Préparation du PDF…',
       () => service.buildSummary(
         overview,
         options: PdfExportOptions(includeNotes: includeNotes),
@@ -63,63 +65,65 @@ Future<void> exportDossierPdf(
   }
 }
 
-class _ExportDialog extends StatefulWidget {
-  const _ExportDialog();
+class _ExportSheet extends StatefulWidget {
+  const _ExportSheet({required this.title});
+
+  final String title;
 
   @override
-  State<_ExportDialog> createState() => _ExportDialogState();
+  State<_ExportSheet> createState() => _ExportSheetState();
 }
 
-class _ExportDialogState extends State<_ExportDialog> {
+class _ExportSheetState extends State<_ExportSheet> {
   bool _includeNotes = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AlertDialog(
-      title: const Text('Récapitulatif PDF'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Le PDF liste les pièces, leur statut et la progression. Il '
-              "n'inclut pas les scans de vos documents.",
-              style: theme.textTheme.bodyMedium,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Récapitulatif PDF', style: theme.textTheme.titleLarge),
+          const SizedBox(height: 6),
+          Text(
+            'Les pièces de « ${widget.title} », leur statut et la '
+            'progression. Vos scans ne sont pas inclus.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
+          ),
+          const SizedBox(height: 16),
+          Panel(
+            color: AppPalette.of(context).muted,
+            radius: 16,
+            child: SwitchListTile(
               title: const Text('Inclure les notes'),
-              subtitle: const Text(
-                'Description, notes du dossier et des pièces, tâches en cours.',
-              ),
+              subtitle: const Text('Notes du dossier, des pièces et tâches'),
               value: _includeNotes,
               onChanged: (v) => setState(() => _includeNotes = v),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(
+              context,
+            ).pop((_Destination.share, _includeNotes)),
+            icon: const Icon(Icons.ios_share_rounded),
+            label: const Text('Partager'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(
+              context,
+            ).pop((_Destination.save, _includeNotes)),
+            icon: const Icon(Icons.download_rounded),
+            label: const Text('Enregistrer sur le téléphone'),
+          ),
+        ],
       ),
-      actionsOverflowButtonSpacing: 8,
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Annuler'),
-        ),
-        OutlinedButton.icon(
-          onPressed: () =>
-              Navigator.of(context).pop((_Destination.save, _includeNotes)),
-          icon: const Icon(Icons.download_outlined),
-          label: const Text('Enregistrer'),
-        ),
-        FilledButton.icon(
-          onPressed: () =>
-              Navigator.of(context).pop((_Destination.share, _includeNotes)),
-          icon: const Icon(Icons.share_outlined),
-          label: const Text('Partager'),
-        ),
-      ],
     );
   }
 }

@@ -1,6 +1,11 @@
 Noto Sans — Copyright 2012 Google Inc. (Noto Project Authors, https://github.com/notofonts/latin-greek-cyrillic)
 Fichiers : NotoSans-Regular.ttf, NotoSans-Bold.ttf (paquet fonts-noto-core).
 
+Manrope — Copyright 2018 The Manrope Project Authors (https://github.com/sharanda/manrope)
+Fichiers : Manrope-Regular/Medium/SemiBold/Bold/ExtraBold.ttf (Google Fonts).
+
+Ces deux familles sont distribuées sous la licence ci-dessous.
+
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
 
 PREAMBLE The goals of the Open Font License (OFL) are to stimulate

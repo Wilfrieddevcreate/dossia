@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router.dart';
-import '../../../app/theme/status_colors.dart';
+import '../../../app/theme/app_theme.dart';
+import '../../../core/database/app_database.dart';
 import '../../../core/utils/dates.dart';
 import '../../../core/utils/today_provider.dart';
 import '../../../core/widgets/common.dart';
@@ -30,7 +32,7 @@ class _DossierDetailScreenState extends ConsumerState<DossierDetailScreen> {
   @override
   void initState() {
     super.initState();
-    // Pour la section « Récemment consultés » de l'accueil.
+    // Pour la section « En cours » de l'accueil.
     ref.read(dossiersRepositoryProvider).markOpened(widget.dossierId).ignore();
   }
 
@@ -83,45 +85,43 @@ class _DossierDetailView extends ConsumerWidget {
             context,
             title: 'Marquer comme terminé ?',
             message:
-                '${pending > 0 ? 'Attention : $pending pièce(s) obligatoire(s) ne sont pas encore disponibles.\n\n' : ''}'
-                '« Terminé » indique que vous avez fini de préparer ce dossier. '
-                "Ce statut ne vaut pas acceptation par l'administration ou "
-                "l'organisme destinataire.",
-            confirmLabel: 'Marquer terminé',
+                '${pending > 0 ? '$pending pièce${pending > 1 ? 's' : ''} obligatoire${pending > 1 ? 's ne sont' : ' n’est'} pas encore disponible${pending > 1 ? 's' : ''}.\n\n' : ''}'
+                'Vous indiquez avoir fini de préparer ce dossier. Cela ne '
+                "garantit pas son acceptation par l'organisme destinataire.",
+            confirmLabel: 'Terminer',
           );
           if (!confirmed || !context.mounted) return;
+          HapticFeedback.mediumImpact();
         }
         await runGuarded(
           context,
           () => repo.setCompleted(d.id, completing),
-          success: completing ? 'Dossier marqué terminé.' : 'Préparation reprise.',
+          success: completing ? 'Dossier terminé' : 'Préparation reprise',
         );
       case _MenuAction.archive:
         final archiving = !overview.isArchived;
         await runGuarded(
           context,
           () => repo.setArchived(d.id, archiving),
-          success: archiving
-              ? 'Dossier archivé. Il reste consultable dans « Archivés ».'
-              : 'Dossier réactivé.',
+          success: archiving ? 'Dossier archivé' : 'Dossier réactivé',
+          onUndo: () => repo.setArchived(d.id, !archiving),
         );
       case _MenuAction.delete:
         final confirmed = await showConfirmDialog(
           context,
           title: 'Supprimer ce dossier ?',
           message:
-              '« ${d.title} » sera supprimé définitivement avec ses '
-              '${overview.items.length} pièce(s) et ${overview.tasks.length} '
-              'tâche(s).\n\nLes documents de votre bibliothèque ne sont pas '
-              'supprimés et restent associés à vos autres dossiers.\n\n'
-              'Pour le conserver sans l’afficher, archivez-le.',
+              '« ${d.title} », ses ${overview.items.length} pièce(s) et '
+              'ses ${overview.tasks.length} tâche(s) seront supprimés '
+              'définitivement.\n\nVos documents restent dans la '
+              'bibliothèque. Pour simplement le ranger, archivez-le.',
           confirmLabel: 'Supprimer',
           destructive: true,
         );
         if (!confirmed || !context.mounted) return;
         final ok = await runGuarded(context, () => repo.deleteDossier(d.id));
         if (ok && context.mounted) {
-          showMessage(context, 'Dossier supprimé.');
+          showMessage(context, 'Dossier supprimé');
           context.pop();
         }
     }
@@ -131,217 +131,191 @@ class _DossierDetailView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final d = overview.dossier;
-    final actions = overview.nextActions();
+    final actions = overview.isActive
+        ? overview.nextActions(limit: 3)
+        : const <NextAction>[];
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(d.title, overflow: TextOverflow.ellipsis),
-        actions: [
-          IconButton(
-            tooltip: 'Exporter le récapitulatif PDF',
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            onPressed: () => exportDossierPdf(context, ref, overview),
-          ),
-          PopupMenuButton<_MenuAction>(
-            tooltip: "Plus d'actions",
-            onSelected: (a) => _onMenu(context, ref, a),
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: _MenuAction.edit,
-                child: Text('Modifier le dossier'),
-              ),
-              if (overview.items.length > 1)
-                const PopupMenuItem(
-                  value: _MenuAction.reorder,
-                  child: Text('Réorganiser les pièces'),
-                ),
-              if (!overview.isArchived)
-                PopupMenuItem(
-                  value: _MenuAction.complete,
-                  child: Text(
-                    overview.status == DossierStatus.completed
-                        ? 'Reprendre la préparation'
-                        : 'Marquer comme terminé',
-                  ),
-                ),
-              PopupMenuItem(
-                value: _MenuAction.archive,
-                child: Text(overview.isArchived ? 'Réactiver' : 'Archiver'),
-              ),
-              const PopupMenuItem(
-                value: _MenuAction.delete,
-                child: Text('Supprimer'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'dossier-fab',
-        onPressed: () => context.push(Routes.newItem(d.id)),
-        icon: const Icon(Icons.add),
-        label: const Text('Ajouter une pièce'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 96),
+    PopupMenuItem<_MenuAction> item(
+      _MenuAction value,
+      IconData icon,
+      String label, {
+      bool danger = false,
+    }) => PopupMenuItem(
+      value: value,
+      child: Row(
         children: [
-          _Header(overview: overview),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _ProgressCard(overview: overview),
+          Icon(
+            icon,
+            size: 20,
+            color: danger
+                ? theme.colorScheme.error
+                : theme.colorScheme.onSurfaceVariant,
           ),
-          if (actions.isNotEmpty && !overview.isArchived) ...[
-            const SectionHeader('Prochaines actions'),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Card(
-                child: Column(
-                  children: [
-                    for (final a in actions)
-                      ListTile(
-                        leading: Icon(_actionIcon(a.kind)),
-                        title: Text('${a.kind.verb} : ${a.label}'),
-                        subtitle: a.dueDate == null
-                            ? null
-                            : Text('Avant le ${formatShortDate(a.dueDate!)}'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          if (a.itemId != null) {
-                            context.push(Routes.item(d.id, a.itemId!));
-                          } else {
-                            final task = overview.tasks.firstWhere(
-                              (t) => t.id == a.taskId,
-                            );
-                            showTaskSheet(context, dossierId: d.id, task: task);
-                          }
-                        },
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          SectionHeader(
-            'Pièces (${overview.items.length})',
-            trailing: TextButton.icon(
-              onPressed: () => context.push(Routes.newItem(d.id)),
-              icon: const Icon(Icons.add),
-              label: const Text('Ajouter'),
-            ),
+          const SizedBox(width: 14),
+          Text(
+            label,
+            style: danger ? TextStyle(color: theme.colorScheme.error) : null,
           ),
-          if (overview.items.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: InfoBanner(
-                icon: Icons.checklist,
-                message:
-                    'Ajoutez les pièces demandées pour ce dossier. Pour '
-                    'chacune, Dossia vous proposera les documents de votre '
-                    'bibliothèque qui correspondent.',
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Card(
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    for (var i = 0; i < overview.items.length; i++) ...[
-                      if (i > 0) const Divider(indent: 16, endIndent: 16),
-                      RequirementTile(
-                        item: overview.items[i],
-                        onTap: () => context.push(
-                          Routes.item(d.id, overview.items[i].view.id),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          SectionHeader(
-            'Tâches',
-            trailing: TextButton.icon(
-              onPressed: () => showTaskSheet(context, dossierId: d.id),
-              icon: const Icon(Icons.add),
-              label: const Text('Ajouter'),
-            ),
-          ),
-          if (overview.tasks.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Aucune tâche. Ajoutez par exemple « Prendre rendez-vous » '
-                'ou « Faire légaliser les diplômes ».',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Card(
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    for (final t in overview.tasks)
-                      _TaskTile(
-                        title: t.title,
-                        dueDate: t.dueDate,
-                        done: t.isCompleted,
-                        onToggle: (v) => runGuarded(
-                          context,
-                          () => ref
-                              .read(dossiersRepositoryProvider)
-                              .setTaskCompleted(t.id, v),
-                        ),
-                        onTap: () =>
-                            showTaskSheet(context, dossierId: d.id, task: t),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          if (d.description != null || d.notes != null) ...[
-            const SectionHeader('Description et notes'),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (d.description != null)
-                        Text(d.description!, style: theme.textTheme.bodyMedium),
-                      if (d.description != null && d.notes != null)
-                        const SizedBox(height: 12),
-                      if (d.notes != null)
-                        Text(
-                          d.notes!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
-  }
 
-  IconData _actionIcon(NextActionKind kind) => switch (kind) {
-    NextActionKind.obtain => Icons.add_task,
-    NextActionKind.renew => Icons.autorenew,
-    NextActionKind.verify => Icons.help_outline,
-    NextActionKind.task => Icons.check_box_outline_blank,
-  };
+    return DetailScaffold(
+      title: d.title,
+      actions: [
+        IconButton(
+          tooltip: 'Exporter le récapitulatif PDF',
+          icon: const Icon(Icons.ios_share_rounded),
+          onPressed: () => exportDossierPdf(context, ref, overview),
+        ),
+        PopupMenuButton<_MenuAction>(
+          tooltip: "Plus d'actions",
+          icon: const Icon(Icons.more_vert_rounded),
+          onSelected: (a) => _onMenu(context, ref, a),
+          itemBuilder: (_) => [
+            item(_MenuAction.edit, Icons.edit_outlined, 'Modifier'),
+            if (overview.items.length > 1)
+              item(
+                _MenuAction.reorder,
+                Icons.reorder_rounded,
+                'Réorganiser les pièces',
+              ),
+            if (!overview.isArchived)
+              item(
+                _MenuAction.complete,
+                overview.status == DossierStatus.completed
+                    ? Icons.replay_rounded
+                    : Icons.task_alt_rounded,
+                overview.status == DossierStatus.completed
+                    ? 'Reprendre la préparation'
+                    : 'Marquer comme terminé',
+              ),
+            item(
+              _MenuAction.archive,
+              overview.isArchived
+                  ? Icons.unarchive_outlined
+                  : Icons.archive_outlined,
+              overview.isArchived ? 'Réactiver' : 'Archiver',
+            ),
+            item(
+              _MenuAction.delete,
+              Icons.delete_outline_rounded,
+              'Supprimer',
+              danger: true,
+            ),
+          ],
+        ),
+      ],
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'dossier-fab',
+        onPressed: () => context.push(Routes.newItem(d.id)),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Ajouter une pièce'),
+      ),
+      slivers: [
+        SliverToBoxAdapter(child: _Header(overview: overview)),
+        SliverBox(child: _ProgressPanel(overview: overview)),
+        if (actions.isNotEmpty) ...[
+          const SliverToBoxAdapter(child: SectionTitle('À faire ensuite')),
+          SliverBox(
+            child: ListGroup(
+              dividerIndent: 68,
+              children: [
+                for (final a in actions)
+                  _NextActionRow(action: a, overview: overview),
+              ],
+            ),
+          ),
+        ],
+        SliverToBoxAdapter(
+          child: SectionTitle(
+            overview.items.isEmpty
+                ? 'Pièces'
+                : 'Pièces · ${overview.items.length}',
+            action: overview.items.length > 1
+                ? SectionAction(
+                    label: 'Réorganiser',
+                    icon: Icons.reorder_rounded,
+                    onPressed: () => context.push(Routes.reorderItems(d.id)),
+                  )
+                : null,
+          ),
+        ),
+        SliverBox(
+          child: overview.items.isEmpty
+              ? const InfoBanner(
+                  icon: Icons.checklist_rounded,
+                  message:
+                      'Ajoutez les pièces demandées. Pour chacune, Dossia '
+                      'vous propose les documents de votre bibliothèque qui '
+                      'correspondent.',
+                )
+              : ListGroup(
+                  dividerIndent: 56,
+                  children: [
+                    for (final i in overview.items)
+                      RequirementTile(
+                        item: i,
+                        onTap: () => context.push(Routes.item(d.id, i.view.id)),
+                      ),
+                  ],
+                ),
+        ),
+        const SliverToBoxAdapter(child: SectionTitle('Tâches')),
+        SliverBox(
+          child: ListGroup(
+            dividerIndent: 56,
+            children: [
+              for (final t in overview.tasks)
+                _TaskRow(task: t, dossierId: d.id),
+              AppRow(
+                dense: true,
+                leading: Icon(
+                  Icons.add_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                title: 'Ajouter une tâche',
+                titleStyle: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+                chevron: false,
+                onTap: () => showTaskSheet(context, dossierId: d.id),
+              ),
+            ],
+          ),
+        ),
+        if (d.description != null || d.notes != null) ...[
+          const SliverToBoxAdapter(child: SectionTitle('Notes')),
+          SliverBox(
+            child: Panel(
+              padding: const EdgeInsets.all(18),
+              child: SizedBox(
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (d.description != null)
+                      Text(d.description!, style: theme.textTheme.bodyMedium),
+                    if (d.description != null && d.notes != null)
+                      const SizedBox(height: 10),
+                    if (d.notes != null)
+                      Text(
+                        d.notes!,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+        const SliverToBoxAdapter(child: SizedBox(height: 120)),
+      ],
+    );
+  }
 }
 
 class _Header extends ConsumerWidget {
@@ -352,12 +326,13 @@ class _Header extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final c = StatusColors.of(context);
     final today = ref.watch(todayProvider);
     final d = overview.dossier;
     final days = overview.daysUntilDeadline(today);
     final overdue = days != null && days < 0 && overview.isActive;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -365,47 +340,168 @@ class _Header extends ConsumerWidget {
             children: [
               Icon(
                 dossierCategoryIcon(d.category),
-                size: 18,
+                size: 17,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  d.category?.label ?? 'Sans catégorie',
-                  style: theme.textTheme.bodyMedium?.copyWith(
+                  d.category?.label ?? 'Dossier',
+                  style: theme.textTheme.labelLarge?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(d.title, style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          DossierStatusChip(overview.status),
-          if (d.deadline != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(
-                  overdue ? Icons.event_busy : Icons.event,
-                  size: 18,
-                  color: overdue
-                      ? theme.colorScheme.error
-                      : theme.colorScheme.onSurfaceVariant,
+          const SizedBox(height: 6),
+          Text(d.title, style: theme.textTheme.headlineMedium),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              DossierStatusChip(overview.status),
+              if (d.deadline != null)
+                StatusChip(
+                  icon: Icons.event_rounded,
+                  label: overdue
+                      ? 'Échéance dépassée · ${formatCompactDate(d.deadline!)}'
+                      : '${formatCompactDate(d.deadline!)} · ${relativeDayLabel(d.deadline!, reference: today)}',
+                  background: overdue ? c.danger : c.neutral,
+                  foreground: overdue ? c.onDanger : c.onNeutral,
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Date limite : ${formatLongDate(d.deadline!)} '
-                    '(${overdue ? 'dépassée, ' : ''}${relativeDayLabel(d.deadline!, reference: today)})',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: overdue ? theme.colorScheme.error : null,
-                      fontWeight: overdue ? FontWeight.w600 : null,
-                    ),
-                  ),
-                ),
-              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProgressPanel extends StatelessWidget {
+  const _ProgressPanel({required this.overview});
+
+  final DossierOverview overview;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final c = StatusColors.of(context);
+    final p = overview.progress;
+    final status = overview.status;
+
+    final note = switch (status) {
+      DossierStatus.readyToCheck => (
+        Icons.fact_check_outlined,
+        'Toutes les pièces obligatoires sont là. Vérifiez leur conformité '
+            'auprès de l’organisme avant le dépôt.',
+      ),
+      DossierStatus.completed => (
+        Icons.task_alt_rounded,
+        'Préparation terminée. Ce statut ne garantit pas l’acceptation du '
+            'dossier.',
+      ),
+      _ => null,
+    };
+
+    return Panel(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ProgressRing(
+                ratio: p.ratio,
+                size: 96,
+                stroke: 9,
+                semanticLabel: p.hasMandatoryItems
+                    ? 'Progression : ${p.percent} pour cent, '
+                          '${p.mandatoryAvailable} pièces obligatoires '
+                          'disponibles sur ${p.mandatoryTotal}'
+                    : 'Aucune pièce obligatoire',
+                child: p.hasMandatoryItems
+                    ? Text(
+                        p.label,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                        ),
+                      )
+                    : Icon(
+                        Icons.checklist_rounded,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: p.hasMandatoryItems
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${p.mandatoryTotal} pièce${p.mandatoryTotal > 1 ? 's' : ''} obligatoire${p.mandatoryTotal > 1 ? 's' : ''}',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          _Legend(
+                            color: c.successIcon,
+                            count: p.mandatoryAvailable,
+                            label: 'disponible',
+                          ),
+                          _Legend(
+                            color: c.warningIcon,
+                            count: p.mandatoryToVerify,
+                            label: 'à vérifier',
+                            invariable: true,
+                          ),
+                          _Legend(
+                            color: c.neutralIcon,
+                            count: p.mandatoryMissing,
+                            label: 'manquante',
+                          ),
+                          if (p.mandatoryToRenew > 0)
+                            _Legend(
+                              color: c.dangerIcon,
+                              count: p.mandatoryToRenew,
+                              label: 'à renouveler',
+                              invariable: true,
+                            ),
+                        ],
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(p.label, style: theme.textTheme.titleMedium),
+                          const SizedBox(height: 4),
+                          Text(
+                            p.optionalTotal > 0
+                                ? 'Seules des pièces facultatives sont listées.'
+                                : 'Ajoutez les pièces demandées pour suivre '
+                                      'l’avancement.',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+          if (note != null) ...[
+            const SizedBox(height: 18),
+            InfoBanner(
+              icon: note.$1,
+              message: note.$2,
+              background: status == DossierStatus.completed
+                  ? c.success
+                  : c.warning,
+              foreground: status == DossierStatus.completed
+                  ? c.onSuccess
+                  : c.onWarning,
             ),
           ],
         ],
@@ -414,206 +510,141 @@ class _Header extends ConsumerWidget {
   }
 }
 
-class _ProgressCard extends StatelessWidget {
-  const _ProgressCard({required this.overview});
+class _Legend extends StatelessWidget {
+  const _Legend({
+    required this.color,
+    required this.count,
+    required this.label,
+    this.invariable = false,
+  });
 
+  final Color color;
+  final int count;
+  final String label;
+
+  /// Libellé sans marque du pluriel (« à vérifier »).
+  final bool invariable;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = invariable || count < 2 ? label : '${label}s';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '$count',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              text,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NextActionRow extends StatelessWidget {
+  const _NextActionRow({required this.action, required this.overview});
+
+  final NextAction action;
   final DossierOverview overview;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = StatusColors.of(context);
-    final p = overview.progress;
-    final status = overview.status;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Progression', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Semantics(
-              label: p.hasMandatoryItems
-                  ? 'Progression : ${p.percent} pour cent, '
-                        '${p.mandatoryAvailable} pièces obligatoires disponibles sur ${p.mandatoryTotal}'
-                  : 'Aucune pièce obligatoire',
-              excludeSemantics: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    p.label,
-                    style: p.hasMandatoryItems
-                        ? theme.textTheme.displaySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.primary,
-                          )
-                        : theme.textTheme.titleMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                  ),
-                  if (p.hasMandatoryItems) ...[
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: p.ratio,
-                        minHeight: 10,
-                        color: theme.colorScheme.secondary,
-                        backgroundColor:
-                            theme.colorScheme.surfaceContainerHighest,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _Count('Obligatoires', p.mandatoryTotal, null, null),
-                _Count(
-                  'Disponibles',
-                  p.mandatoryAvailable,
-                  colors.success,
-                  colors.onSuccess,
-                ),
-                _Count(
-                  'Manquantes',
-                  p.mandatoryMissing,
-                  colors.danger,
-                  colors.onDanger,
-                ),
-                _Count(
-                  'À vérifier',
-                  p.mandatoryToVerify,
-                  colors.warning,
-                  colors.onWarning,
-                ),
-                if (p.mandatoryToRenew > 0)
-                  _Count(
-                    'À renouveler',
-                    p.mandatoryToRenew,
-                    colors.danger,
-                    colors.onDanger,
-                  ),
-                if (p.optionalTotal > 0)
-                  _Count(
-                    'Facultatives',
-                    p.optionalTotal,
-                    colors.neutral,
-                    colors.onNeutral,
-                  ),
-              ],
-            ),
-            if (status == DossierStatus.readyToCheck) ...[
-              const SizedBox(height: 16),
-              InfoBanner(
-                icon: Icons.fact_check_outlined,
-                background: colors.warning,
-                foreground: colors.onWarning,
-                message:
-                    'Toutes les pièces obligatoires sont déclarées '
-                    'disponibles. Vérifiez leur conformité auprès de '
-                    "l'organisme concerné avant le dépôt.",
-              ),
-            ],
-            if (status == DossierStatus.completed) ...[
-              const SizedBox(height: 16),
-              InfoBanner(
-                icon: Icons.task_alt,
-                background: colors.success,
-                foreground: colors.onSuccess,
-                message:
-                    'Vous avez indiqué avoir terminé la préparation. Ce '
-                    "statut ne vaut pas acceptation par l'organisme "
-                    'destinataire.',
-              ),
-            ],
-          ],
-        ),
+    final c = StatusColors.of(context);
+    final (icon, bg, fg, verb) = switch (action.kind) {
+      NextActionKind.obtain => (
+        Icons.add_task_rounded,
+        c.neutral,
+        c.onNeutral,
+        'À obtenir',
       ),
+      NextActionKind.renew => (
+        Icons.autorenew_rounded,
+        c.danger,
+        c.onDanger,
+        'À renouveler',
+      ),
+      NextActionKind.verify => (
+        Icons.priority_high_rounded,
+        c.warning,
+        c.onWarning,
+        'À vérifier',
+      ),
+      NextActionKind.task => (Icons.check_rounded, c.info, c.onInfo, 'Tâche'),
+    };
+    return AppRow(
+      leading: IconTile(icon, size: 38, background: bg, foreground: fg),
+      title: action.label,
+      subtitle: action.dueDate == null
+          ? verb
+          : '$verb · avant le ${formatCompactDate(action.dueDate!)}',
+      onTap: () {
+        final id = overview.dossier.id;
+        if (action.itemId != null) {
+          context.push(Routes.item(id, action.itemId!));
+        } else {
+          final task = overview.tasks.firstWhere((t) => t.id == action.taskId);
+          showTaskSheet(context, dossierId: id, task: task);
+        }
+      },
     );
   }
 }
 
-class _Count extends StatelessWidget {
-  const _Count(this.label, this.value, this.background, this.foreground);
+class _TaskRow extends ConsumerWidget {
+  const _TaskRow({required this.task, required this.dossierId});
 
-  final String label;
-  final int value;
-  final Color? background;
-  final Color? foreground;
+  final TaskRow task;
+  final String dossierId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final fg = foreground ?? theme.colorScheme.onSurface;
-    return Semantics(
-      label: '$label : $value',
-      excludeSemantics: true,
-      child: Container(
-        constraints: const BoxConstraints(minWidth: 92),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: background ?? theme.colorScheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$value',
-              style: theme.textTheme.titleLarge?.copyWith(color: fg),
-            ),
-            Text(label, style: theme.textTheme.labelMedium?.copyWith(color: fg)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TaskTile extends StatelessWidget {
-  const _TaskTile({
-    required this.title,
-    required this.dueDate,
-    required this.done,
-    required this.onToggle,
-    required this.onTap,
-  });
-
-  final String title;
-  final DateTime? dueDate;
-  final bool done;
-  final ValueChanged<bool> onToggle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ListTile(
-      leading: Checkbox(
-        value: done,
-        onChanged: (v) => onToggle(v ?? false),
+    final done = task.isCompleted;
+    return AppRow(
+      dense: true,
+      leading: RoundCheck(
+        checked: done,
         semanticLabel: done ? 'Tâche terminée' : 'Tâche à faire',
+        onChanged: (v) {
+          HapticFeedback.selectionClick();
+          runGuarded(
+            context,
+            () => ref
+                .read(dossiersRepositoryProvider)
+                .setTaskCompleted(task.id, v),
+          );
+        },
       ),
-      title: Text(
-        title,
-        style: done
-            ? TextStyle(
-                decoration: TextDecoration.lineThrough,
-                color: theme.colorScheme.onSurfaceVariant,
-              )
-            : null,
+      title: task.title,
+      titleStyle: theme.textTheme.bodyLarge?.copyWith(
+        fontWeight: FontWeight.w600,
+        decoration: done ? TextDecoration.lineThrough : null,
+        color: done ? theme.colorScheme.onSurfaceVariant : null,
       ),
-      subtitle: dueDate == null
+      subtitle: task.dueDate == null
           ? null
-          : Text('Avant le ${formatShortDate(dueDate!)}'),
-      onTap: onTap,
+          : 'Avant le ${formatCompactDate(task.dueDate!)}',
+      chevron: false,
+      onTap: () => showTaskSheet(context, dossierId: dossierId, task: task),
     );
   }
 }

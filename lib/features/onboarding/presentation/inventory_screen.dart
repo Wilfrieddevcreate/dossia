@@ -1,5 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,6 +8,8 @@ import '../../../app/router.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/models/document_category.dart';
 import '../../../core/widgets/common.dart';
+import '../../../core/widgets/status_badges.dart';
+import '../../../core/widgets/form_fields.dart';
 import '../../documents/data/documents_repository.dart';
 import '../../documents/presentation/type_picker.dart';
 import '../../settings/data/settings_repository.dart';
@@ -48,8 +51,8 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
       showMessage(
         context,
         n == 1
-            ? '1 document ajouté à votre bibliothèque.'
-            : '$n documents ajoutés à votre bibliothèque.',
+            ? '1 document ajouté à votre bibliothèque'
+            : '$n documents ajoutés à votre bibliothèque',
       );
     }
     if (widget.fromOnboarding) {
@@ -66,6 +69,23 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     }
   }
 
+  void _toggle(String typeId) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (!_selected.remove(typeId)) _selected.add(typeId);
+    });
+  }
+
+  String get _buttonLabel {
+    final n = _selected.length;
+    if (n == 0) {
+      return widget.fromOnboarding
+          ? 'Continuer sans document'
+          : 'Sélectionnez des documents';
+    }
+    return n == 1 ? 'Ajouter 1 document' : 'Ajouter $n documents';
+  }
+
   @override
   Widget build(BuildContext context) {
     final types = ref.watch(documentTypesProvider);
@@ -77,118 +97,115 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.fromOnboarding ? 'Vos documents' : 'Compléter mon inventaire',
-        ),
-        actions: [
-          if (widget.fromOnboarding)
-            TextButton(
-              onPressed: _saving ? null : () => _finish(save: false),
-              child: const Text('Passer'),
-            ),
-        ],
+      bottomNavigationBar: FormSaveBar(
+        label: _buttonLabel,
+        busy: _saving,
+        onPressed: (_selected.isEmpty && !widget.fromOnboarding)
+            ? null
+            : () => _finish(save: true),
       ),
       body: AsyncView(
         value: types,
         builder: (types) {
           final byCategory = groupBy(types, (DocumentTypeRow t) => t.category);
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text(
-                  'Cochez les documents que vous possédez réellement. '
-                  "Inutile d'avoir leur version numérique : vous pourrez "
-                  'ajouter un fichier, des dates ou des notes plus tard.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+          return CustomScrollView(
+            slivers: [
+              LargeTitleAppBar(
+                title: widget.fromOnboarding
+                    ? 'Vos documents'
+                    : 'Compléter mon inventaire',
+                actions: [
+                  if (widget.fromOnboarding)
+                    TextButton(
+                      onPressed: _saving ? null : () => _finish(save: false),
+                      child: const Text('Passer'),
+                    ),
+                ],
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                  child: Text(
+                    'Cochez ce que vous avez déjà, même sans version '
+                    'numérique.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ),
               for (final category in DocumentCategory.values)
                 if (byCategory[category]?.isNotEmpty ?? false) ...[
-                  SectionHeader(
-                    category.label,
-                    trailing: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Icon(
-                        documentCategoryIcon(category),
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                  SliverToBoxAdapter(child: SectionTitle(category.label)),
+                  SliverBox(
+                    child: ListGroup(
+                      dividerIndent: 58,
+                      children: [
+                        for (final type in byCategory[category]!)
+                          _TypeRow(
+                            type: type,
+                            owned: ownedTypeIds.contains(type.id),
+                            selected: _selected.contains(type.id),
+                            onTap: () => _toggle(type.id),
+                          ),
+                      ],
                     ),
                   ),
-                  for (final type in byCategory[category]!)
-                    _TypeTile(
-                      type: type,
-                      owned: ownedTypeIds.contains(type.id),
-                      selected: _selected.contains(type.id),
-                      onChanged: (value) => setState(() {
-                        value
-                            ? _selected.add(type.id)
-                            : _selected.remove(type.id);
-                      }),
-                    ),
                 ],
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: OutlinedButton.icon(
-                  onPressed: _addCustom,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Ajouter un document personnalisé'),
+              const SliverToBoxAdapter(child: SizedBox(height: 16)),
+              SliverBox(
+                child: Panel(
+                  child: AppRow(
+                    leading: IconTile(
+                      Icons.add_rounded,
+                      background: theme.colorScheme.primaryContainer,
+                      foreground: theme.colorScheme.onPrimaryContainer,
+                    ),
+                    title: 'Ajouter un document personnalisé',
+                    subtitle: 'Un document absent de la liste',
+                    onTap: _addCustom,
+                  ),
                 ),
               ),
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
             ],
           );
         },
-      ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        child: FilledButton(
-          onPressed: _saving
-              ? null
-              : (_selected.isEmpty && !widget.fromOnboarding)
-              ? null
-              : () => _finish(save: true),
-          child: Text(
-            _selected.isEmpty
-                ? (widget.fromOnboarding
-                      ? 'Continuer sans document'
-                      : 'Sélectionnez des documents')
-                : 'Ajouter ${_selected.length} document${_selected.length > 1 ? 's' : ''}',
-          ),
-        ),
       ),
     );
   }
 }
 
-class _TypeTile extends StatelessWidget {
-  const _TypeTile({
+class _TypeRow extends StatelessWidget {
+  const _TypeRow({
     required this.type,
     required this.owned,
     required this.selected,
-    required this.onChanged,
+    required this.onTap,
   });
 
   final DocumentTypeRow type;
   final bool owned;
   final bool selected;
-  final ValueChanged<bool> onChanged;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return CheckboxListTile(
-      value: selected,
-      onChanged: (v) => onChanged(v ?? false),
-      title: Text(type.name),
-      subtitle: owned
-          ? const Text(
-              'Déjà dans votre bibliothèque — cochez pour en ajouter un autre',
-            )
-          : null,
-      controlAffinity: ListTileControlAffinity.leading,
+    return Semantics(
+      checked: selected,
+      button: true,
+      label: owned ? '${type.name}, déjà enregistré' : type.name,
+      excludeSemantics: true,
+      child: AppRow(
+        dense: true,
+        chevron: false,
+        onTap: onTap,
+        leading: RoundCheck(checked: selected),
+        title: type.name,
+        subtitle: owned ? 'Déjà enregistré' : null,
+      ),
     );
   }
 }
+
+/// Case ronde animée, cochée en vert.

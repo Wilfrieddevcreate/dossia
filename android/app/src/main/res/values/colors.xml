@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fond de l'application (thème clair / sombre), repris au lancement
+         pour éviter tout flash blanc avant la première image. -->
+    <color name="app_background">#F3F5F4</color>
+</resources>

@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../../app/router.dart';
-import '../../../app/theme/status_colors.dart';
+import '../../../app/theme/app_theme.dart';
 import '../../../core/utils/dates.dart';
 import '../../../core/utils/today_provider.dart';
 import '../../../core/widgets/common.dart';
 import '../../deadlines/data/deadlines_provider.dart';
+import '../../deadlines/domain/deadline_models.dart';
 import '../../deadlines/presentation/deadline_tile.dart';
 import '../../documents/data/documents_repository.dart';
 import '../../dossiers/data/dossiers_repository.dart';
+import '../../dossiers/domain/dossier_models.dart';
 import '../../dossiers/presentation/dossiers_screen.dart';
 import '../../settings/data/settings_repository.dart';
 
@@ -24,49 +27,25 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dossiers = ref.watch(dossierOverviewsProvider);
-    final deadlines = ref.watch(splitDeadlinesProvider);
+    final deadlines = ref.watch(splitDeadlinesProvider).value;
     final documentCount = ref.watch(documentsProvider).value?.length ?? 0;
     final settings = ref.watch(settingsProvider).value;
     final today = ref.watch(todayProvider);
-    final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dossia'),
-        actions: [
-          IconButton(
-            tooltip: 'Échéances',
-            icon: const Icon(Icons.event_note_outlined),
-            onPressed: () => context.push(Routes.deadlines),
-          ),
-        ],
-      ),
       body: AsyncView(
         value: dossiers,
         builder: (all) {
           final active = all.where((d) => d.isActive).toList();
-          final missing = active.fold<int>(
-            0,
-            (sum, d) => sum + d.progress.mandatoryMissing,
-          );
-          final toCheck = active.fold<int>(
-            0,
-            (sum, d) =>
-                sum + d.progress.mandatoryToVerify + d.progress.mandatoryToRenew,
-          );
-          final recent =
-              all
-                  .where((d) => !d.isArchived && d.dossier.lastOpenedAt != null)
-                  .toList()
-                ..sort(
-                  (a, b) => b.dossier.lastOpenedAt!.compareTo(
-                    a.dossier.lastOpenedAt!,
-                  ),
-                );
-          final split = deadlines.value;
-          final nextDeadlines = [
-            ...?split?.overdue.take(2),
-            ...?split?.upcoming.take(3),
+          final recent = all.where((d) => d.isActive).toList()
+            ..sort((a, b) {
+              final la = a.dossier.lastOpenedAt ?? a.dossier.updatedAt;
+              final lb = b.dossier.lastOpenedAt ?? b.dossier.updatedAt;
+              return lb.compareTo(la);
+            });
+          final upcoming = [
+            ...?deadlines?.overdue.take(2),
+            ...?deadlines?.upcoming.take(3),
           ];
           final lastBackup = settings?.lastBackupAt;
           final needsBackup =
@@ -75,217 +54,334 @@ class DashboardScreen extends ConsumerWidget {
                   daysBetween(lastBackup.toLocal(), DateTime.now()) >
                       _backupReminderDays);
 
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 32),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Bonjour', style: theme.textTheme.headlineSmall),
-                    const SizedBox(height: 4),
-                    Text(
-                      active.isEmpty
-                          ? 'Préparez vos dossiers sans oublier une seule pièce.'
-                          : 'Voici où en sont vos dossiers.',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+          return CustomScrollView(
+            slivers: [
+              SliverSafeArea(
+                bottom: false,
+                sliver: SliverToBoxAdapter(
+                  child: _Header(
+                    today: today,
+                    overdueCount: deadlines?.overdue.length ?? 0,
+                  ),
                 ),
               ),
-              Padding(
+              SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _StatCard(
-                        label: 'Dossiers actifs',
-                        value: active.length,
-                        icon: Icons.folder_outlined,
-                        onTap: () => context.go(Routes.dossiers),
+                sliver: SliverToBoxAdapter(
+                  child: _SummaryPanel(
+                    active: active,
+                    hasAny: all.isNotEmpty,
+                    next: deadlines?.upcoming.firstOrNull,
+                    today: today,
+                  ),
+                ),
+              ),
+              if (recent.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: SectionTitle(
+                    'En cours',
+                    action: SectionAction(
+                      label: 'Tout voir',
+                      onPressed: () => context.go(Routes.dossiers),
+                    ),
+                  ),
+                ),
+                _padded(
+                  ListGroup(
+                    children: [
+                      for (final d in recent.take(3))
+                        DossierListRow(overview: d),
+                    ],
+                  ),
+                ),
+              ],
+              if (upcoming.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: SectionTitle(
+                    'À venir',
+                    action: SectionAction(
+                      label: 'Échéances',
+                      onPressed: () => context.push(Routes.deadlines),
+                    ),
+                  ),
+                ),
+                _padded(
+                  ListGroup(
+                    children: [
+                      for (final e in upcoming)
+                        DeadlineTile(entry: e, today: today),
+                    ],
+                  ),
+                ),
+              ],
+              if (all.isEmpty) ...[
+                const SliverToBoxAdapter(
+                  child: SectionTitle('Pour bien démarrer'),
+                ),
+                _padded(
+                  ListGroup(
+                    children: [
+                      AppRow(
+                        leading: const IconTile(
+                          Icons.playlist_add_check_rounded,
+                        ),
+                        title: documentCount == 0
+                            ? 'Enregistrez vos documents'
+                            : 'Complétez votre inventaire',
+                        subtitle:
+                            'Identité, diplômes, attestations… même sans '
+                            'scan.',
+                        onTap: () => context.push(Routes.inventory),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _StatCard(
-                        label: 'Pièces manquantes',
-                        value: missing,
-                        icon: Icons.radio_button_unchecked,
-                        highlight: missing > 0,
-                        onTap: () => context.go(Routes.dossiers),
+                      AppRow(
+                        leading: const IconTile(Icons.restore_rounded),
+                        title: 'Restaurer une sauvegarde',
+                        subtitle:
+                            'Vous changez de téléphone ? Récupérez vos '
+                            'données.',
+                        onTap: () => context.push(Routes.backup),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              if (toCheck > 0)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Text(
-                    '$toCheck pièce(s) obligatoire(s) à vérifier ou à '
-                    'renouveler.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+              ],
+              if (needsBackup) ...[
+                const SliverToBoxAdapter(child: SizedBox(height: 28)),
+                _padded(_BackupReminder(lastBackup: lastBackup)),
+              ],
+              if (all.isNotEmpty || documentCount > 0) ...[
+                const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                _padded(
+                  Panel(
+                    child: AppRow(
+                      leading: const IconTile(Icons.inventory_2_outlined),
+                      title: 'Ma bibliothèque',
+                      subtitle:
+                          '$documentCount document${documentCount > 1 ? 's' : ''} enregistré${documentCount > 1 ? 's' : ''}',
+                      onTap: () => context.go(Routes.documents),
                     ),
                   ),
                 ),
-              if (needsBackup)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: InfoBanner(
-                    icon: Icons.backup_outlined,
-                    background: StatusColors.of(context).warning,
-                    foreground: StatusColors.of(context).onWarning,
-                    title: lastBackup == null
-                        ? 'Aucune sauvegarde'
-                        : 'Dernière sauvegarde il y a plus de $_backupReminderDays jours',
-                    message:
-                        'Vos données restent sur ce téléphone. Sans '
-                        'sauvegarde, elles seraient perdues en cas de perte, '
-                        'de panne ou de désinstallation.',
-                    action: TextButton(
-                      onPressed: () => context.push(Routes.backup),
-                      child: const Text('Sauvegarder maintenant'),
-                    ),
-                  ),
-                ),
-              SectionHeader(
-                'Prochaines échéances',
-                trailing: TextButton(
-                  onPressed: () => context.push(Routes.deadlines),
-                  child: const Text('Tout voir'),
-                ),
-              ),
-              if (nextDeadlines.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    'Aucune échéance. Les dates limites des dossiers et les '
-                    "dates d'expiration des documents apparaîtront ici.",
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      children: [
-                        for (final e in nextDeadlines)
-                          DeadlineTile(entry: e, today: today),
-                      ],
-                    ),
-                  ),
-                ),
-              SectionHeader(
-                'Récemment consultés',
-                trailing: recent.isEmpty
-                    ? null
-                    : TextButton(
-                        onPressed: () => context.go(Routes.dossiers),
-                        child: const Text('Tous les dossiers'),
-                      ),
-              ),
-              if (recent.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: InfoBanner(
-                    icon: Icons.create_new_folder_outlined,
-                    message:
-                        'Créez votre premier dossier : visa, inscription, '
-                        'candidature… puis listez les pièces demandées.',
-                  ),
-                )
-              else
-                for (final d in recent.take(3))
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                    child: DossierCard(overview: d),
-                  ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: () => context.push(Routes.newDossier),
-                      icon: const Icon(Icons.create_new_folder_outlined),
-                      label: const Text('Créer un dossier'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => context.go(Routes.documents),
-                      icon: const Icon(Icons.inventory_2_outlined),
-                      label: Text('Ma bibliothèque ($documentCount)'),
-                    ),
-                  ],
-                ),
-              ),
+              ],
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
             ],
           );
         },
       ),
     );
   }
+
+  Widget _padded(Widget child) => SliverPadding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    sliver: SliverToBoxAdapter(child: child),
+  );
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.onTap,
-    this.highlight = false,
-  });
+class _Header extends StatelessWidget {
+  const _Header({required this.today, required this.overdueCount});
 
-  final String label;
-  final int value;
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool highlight;
+  final DateTime today;
+  final int overdueCount;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colors = StatusColors.of(context);
-    final fg = highlight ? colors.onDanger : theme.colorScheme.onSurface;
-    return Semantics(
-      button: true,
-      label: '$label : $value',
-      excludeSemantics: true,
-      child: Card(
-        color: highlight ? colors.danger : null,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+    final date = DateFormat('EEEE d MMMM', 'fr_FR').format(today);
+    final greeting = DateTime.now().hour >= 18 ? 'Bonsoir' : 'Bonjour';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 8, 20),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, color: highlight ? fg : theme.colorScheme.primary),
-                const SizedBox(height: 12),
                 Text(
-                  '$value',
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    color: fg,
+                  date[0].toUpperCase() + date.substring(1),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                Text(
-                  label,
-                  style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+                const SizedBox(height: 4),
+                Semantics(
+                  header: true,
+                  child: Text(greeting, style: theme.textTheme.headlineLarge),
                 ),
               ],
             ),
           ),
+          IconButton(
+            tooltip: overdueCount > 0
+                ? 'Échéances, $overdueCount en retard'
+                : 'Échéances',
+            onPressed: () => context.push(Routes.deadlines),
+            icon: Badge(
+              isLabelVisible: overdueCount > 0,
+              smallSize: 9,
+              backgroundColor: StatusColors.of(context).dangerIcon,
+              child: const Icon(Icons.calendar_month_outlined),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Synthèse en tête d'accueil : ce qu'il reste à réunir.
+class _SummaryPanel extends StatelessWidget {
+  const _SummaryPanel({
+    required this.active,
+    required this.hasAny,
+    required this.next,
+    required this.today,
+  });
+
+  final List<DossierOverview> active;
+  final bool hasAny;
+  final DeadlineEntry? next;
+  final DateTime today;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
+    final bg = dark ? scheme.primaryContainer : scheme.primary;
+    final fg = dark ? scheme.onPrimaryContainer : scheme.onPrimary;
+    final soft = fg.withValues(alpha: 0.78);
+
+    final missing = active.fold<int>(
+      0,
+      (s, d) => s + d.progress.mandatoryMissing,
+    );
+    final toCheck = active.fold<int>(
+      0,
+      (s, d) => s + d.progress.mandatoryToVerify + d.progress.mandatoryToRenew,
+    );
+
+    final Widget body;
+    if (active.isEmpty) {
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            hasAny ? 'Aucun dossier en cours' : 'Votre premier dossier',
+            style: theme.textTheme.headlineSmall?.copyWith(color: fg),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            hasAny
+                ? 'Vos dossiers sont terminés ou archivés.'
+                : 'Listez les pièces demandées, Dossia vous montre ce qu’il '
+                      'manque.',
+            style: theme.textTheme.bodyMedium?.copyWith(color: soft),
+          ),
+          const SizedBox(height: 18),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: fg,
+              foregroundColor: bg,
+              minimumSize: const Size(64, 46),
+            ),
+            onPressed: () => context.push(Routes.newDossier),
+            child: const Text('Créer un dossier'),
+          ),
+        ],
+      );
+    } else {
+      final dossierWord = active.length > 1 ? 'dossiers' : 'dossier';
+      final headline = missing == 0
+          ? (toCheck == 0 ? 'Tout est réuni' : '$toCheck à vérifier')
+          : '$missing pièce${missing > 1 ? 's' : ''} à réunir';
+      final sub = missing == 0 && toCheck == 0
+          ? 'Vos ${active.length} $dossierWord en cours sont complets.'
+          : [
+              'Dans ${active.length} $dossierWord en cours',
+              if (missing > 0 && toCheck > 0) '$toCheck à vérifier',
+            ].join(' · ');
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            headline,
+            style: theme.textTheme.headlineMedium?.copyWith(color: fg),
+          ),
+          const SizedBox(height: 4),
+          Text(sub, style: theme.textTheme.bodyMedium?.copyWith(color: soft)),
+          if (next != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Divider(color: fg.withValues(alpha: 0.18), height: 1),
+            ),
+            Row(
+              children: [
+                Icon(Icons.schedule_rounded, size: 18, color: soft),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: next!.title,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        TextSpan(
+                          text:
+                              ' · ${relativeDayLabel(next!.date, reference: today)}',
+                        ),
+                      ],
+                    ),
+                    style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      );
+    }
+
+    return Semantics(
+      container: true,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(26),
         ),
+        child: body,
+      ),
+    );
+  }
+}
+
+class _BackupReminder extends StatelessWidget {
+  const _BackupReminder({required this.lastBackup});
+
+  final DateTime? lastBackup;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = StatusColors.of(context);
+    return Panel(
+      child: AppRow(
+        leading: IconTile(
+          Icons.cloud_upload_outlined,
+          background: status.warning,
+          foreground: status.onWarning,
+        ),
+        title: lastBackup == null
+            ? 'Faites une première sauvegarde'
+            : 'Sauvegarde à refaire',
+        subtitle: lastBackup == null
+            ? 'Pour ne rien perdre si le téléphone est perdu ou en panne.'
+            : 'Dernière le ${formatCompactDate(lastBackup!.toLocal())}.',
+        onTap: () => context.push(Routes.backup),
       ),
     );
   }

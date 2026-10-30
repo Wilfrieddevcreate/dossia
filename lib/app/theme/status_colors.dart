@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 /// Couleurs des statuts. Chaque couple fond/texte respecte un contraste
-/// d'au moins 4,5:1. La couleur n'est jamais le seul indicateur : chaque
-/// statut a aussi un libellé et une icône.
+/// d'au moins 4,5:1 ; les teintes « icône » atteignent 3:1 sur les blocs.
+/// La couleur n'est jamais le seul indicateur : chaque statut a aussi un
+/// libellé et une icône.
 @immutable
 class StatusColors extends ThemeExtension<StatusColors> {
   const StatusColors({
@@ -16,32 +17,44 @@ class StatusColors extends ThemeExtension<StatusColors> {
     required this.onInfo,
     required this.neutral,
     required this.onNeutral,
+    required this.successIcon,
+    required this.warningIcon,
+    required this.dangerIcon,
+    required this.neutralIcon,
   });
 
   static const light = StatusColors(
-    success: Color(0xFFDDF0E6),
-    onSuccess: Color(0xFF0F5238),
-    warning: Color(0xFFFFF0D4),
+    success: Color(0xFFE2F2E9),
+    onSuccess: Color(0xFF125A3A),
+    warning: Color(0xFFFCF0DA),
     onWarning: Color(0xFF7A4A00),
-    danger: Color(0xFFFCE4E2),
-    onDanger: Color(0xFF9A1F17),
-    info: Color(0xFFE2ECF8),
-    onInfo: Color(0xFF1D4A7A),
-    neutral: Color(0xFFEAEFEC),
-    onNeutral: Color(0xFF46524C),
+    danger: Color(0xFFFBE6E4),
+    onDanger: Color(0xFF9C251C),
+    info: Color(0xFFE5EDF8),
+    onInfo: Color(0xFF22528C),
+    neutral: Color(0xFFEDF1EF),
+    onNeutral: Color(0xFF4A5650),
+    successIcon: Color(0xFF1B7A52),
+    warningIcon: Color(0xFFB06A00),
+    dangerIcon: Color(0xFFC0392B),
+    neutralIcon: Color(0xFF7C8781),
   );
 
   static const dark = StatusColors(
-    success: Color(0xFF1E4434),
-    onSuccess: Color(0xFFB6E8CD),
-    warning: Color(0xFF4A3510),
-    onWarning: Color(0xFFFFD99A),
-    danger: Color(0xFF5A1F1B),
-    onDanger: Color(0xFFFFC2BC),
-    info: Color(0xFF1C3450),
-    onInfo: Color(0xFFC3DAF5),
-    neutral: Color(0xFF2F3633),
-    onNeutral: Color(0xFFCBD4CF),
+    success: Color(0xFF1B3428),
+    onSuccess: Color(0xFFA9E5C7),
+    warning: Color(0xFF3B2C12),
+    onWarning: Color(0xFFF6D193),
+    danger: Color(0xFF41201D),
+    onDanger: Color(0xFFFFBCB4),
+    info: Color(0xFF1B2B40),
+    onInfo: Color(0xFFBBD4F3),
+    neutral: Color(0xFF252D29),
+    onNeutral: Color(0xFFC6CFCA),
+    successIcon: Color(0xFF6FCBA0),
+    warningIcon: Color(0xFFF0B455),
+    dangerIcon: Color(0xFFFF8A7E),
+    neutralIcon: Color(0xFF8A968F),
   );
 
   final Color success;
@@ -54,6 +67,12 @@ class StatusColors extends ThemeExtension<StatusColors> {
   final Color onInfo;
   final Color neutral;
   final Color onNeutral;
+
+  /// Teintes pour les icônes de statut (pastilles des listes).
+  final Color successIcon;
+  final Color warningIcon;
+  final Color dangerIcon;
+  final Color neutralIcon;
 
   static StatusColors of(BuildContext context) =>
       Theme.of(context).extension<StatusColors>() ?? light;
@@ -76,6 +95,10 @@ class StatusColors extends ThemeExtension<StatusColors> {
       onInfo: l(onInfo, other.onInfo),
       neutral: l(neutral, other.neutral),
       onNeutral: l(onNeutral, other.onNeutral),
+      successIcon: l(successIcon, other.successIcon),
+      warningIcon: l(warningIcon, other.warningIcon),
+      dangerIcon: l(dangerIcon, other.dangerIcon),
+      neutralIcon: l(neutralIcon, other.neutralIcon),
     );
   }
 }

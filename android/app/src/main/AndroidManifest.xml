@@ -20,6 +20,7 @@
          (copie vers le cloud ou transfert d'appareil) est désactivée ; seules
          les sauvegardes manuelles de l'application existent. -->
     <application
+        android:enableOnBackInvokedCallback="true"
         android:label="Dossia"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"

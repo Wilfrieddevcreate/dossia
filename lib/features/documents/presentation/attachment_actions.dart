@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_filex/open_filex.dart';
 
+import '../../../app/theme/app_theme.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/files/file_storage_service.dart';
 import '../../../core/widgets/common.dart';
@@ -120,30 +121,39 @@ class _ImageViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title, overflow: TextOverflow.ellipsis),
-        actions: [
-          IconButton(
-            tooltip: 'Ouvrir avec une autre application',
-            icon: const Icon(Icons.open_in_new),
-            onPressed: () => _openExternally(context, file, null),
+    // Fond sombre quel que soit le thème, comme une visionneuse de photos.
+    return Theme(
+      data: buildDarkTheme(),
+      child: Builder(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            backgroundColor: Colors.black.withValues(alpha: 0.4),
+            foregroundColor: Colors.white,
+            title: Text(title, overflow: TextOverflow.ellipsis),
+            actions: [
+              IconButton(
+                tooltip: 'Ouvrir avec une autre application',
+                icon: const Icon(Icons.open_in_new_rounded),
+                onPressed: () => _openExternally(context, file, null),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: InteractiveViewer(
-        maxScale: 5,
-        child: Center(
-          child: Image.file(
-            file,
-            semanticLabel: title,
-            errorBuilder: (context, _, _) => const EmptyState(
-              icon: Icons.broken_image_outlined,
-              title: 'Aperçu indisponible',
-              message:
-                  "Ce format d'image ne peut pas être affiché ici. Utilisez "
-                  'le bouton en haut à droite pour l’ouvrir avec une autre '
-                  'application.',
+          body: InteractiveViewer(
+            maxScale: 5,
+            child: Center(
+              child: Image.file(
+                file,
+                semanticLabel: title,
+                errorBuilder: (context, _, _) => const EmptyState(
+                  icon: Icons.broken_image_outlined,
+                  title: 'Aperçu indisponible',
+                  message:
+                      "Ce format d'image ne s'affiche pas ici. Ouvrez-le avec "
+                      'une autre application (bouton en haut à droite).',
+                ),
+              ),
             ),
           ),
         ),

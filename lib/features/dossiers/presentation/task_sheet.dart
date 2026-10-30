@@ -16,11 +16,8 @@ Future<void> showTaskSheet(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    showDragHandle: true,
     builder: (context) => Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.viewInsetsOf(context).bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: _TaskForm(dossierId: dossierId, task: task),
     ),
   );
@@ -54,7 +51,11 @@ class _TaskFormState extends ConsumerState<_TaskForm> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     final repo = ref.read(dossiersRepositoryProvider);
-    final input = TaskInput(title: _title.text, dueDate: _due, notes: _notes.text);
+    final input = TaskInput(
+      title: _title.text,
+      dueDate: _due,
+      notes: _notes.text,
+    );
     final ok = await runGuarded(
       context,
       () => widget.task == null
@@ -85,32 +86,35 @@ class _TaskFormState extends ConsumerState<_TaskForm> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final editing = widget.task != null;
     return Form(
       key: _formKey,
       child: ListView(
         shrinkWrap: true,
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         children: [
           Text(
-            widget.task == null ? 'Nouvelle tâche' : 'Modifier la tâche',
+            editing ? 'Modifier la tâche' : 'Nouvelle tâche',
             style: theme.textTheme.titleLarge,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           TextFormField(
             controller: _title,
-            autofocus: widget.task == null,
+            autofocus: !editing,
             textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.next,
             maxLength: 200,
             decoration: const InputDecoration(
               labelText: 'Tâche *',
               hintText: 'ex. Prendre rendez-vous au consulat',
+              counterText: '',
             ),
             validator: (v) =>
                 (v == null || v.trim().isEmpty) ? 'Décrivez la tâche.' : null,
           ),
           formGap,
           DateField(
-            label: 'À faire avant le (facultatif)',
+            label: 'À faire avant le',
             initialValue: _due,
             onChanged: (d) => setState(() => _due = d),
           ),
@@ -121,17 +125,17 @@ class _TaskFormState extends ConsumerState<_TaskForm> {
             minLines: 2,
             maxLines: 4,
             decoration: const InputDecoration(
-              labelText: 'Notes (facultatives)',
+              labelText: 'Notes',
               alignLabelWithHint: true,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 22),
           Row(
             children: [
-              if (widget.task != null)
+              if (editing)
                 TextButton.icon(
-                  onPressed: _delete,
-                  icon: const Icon(Icons.delete_outline),
+                  onPressed: _saving ? null : _delete,
+                  icon: const Icon(Icons.delete_outline_rounded),
                   label: const Text('Supprimer'),
                   style: TextButton.styleFrom(
                     foregroundColor: theme.colorScheme.error,
@@ -140,7 +144,8 @@ class _TaskFormState extends ConsumerState<_TaskForm> {
               const Spacer(),
               FilledButton(
                 onPressed: _saving ? null : _save,
-                child: const Text('Enregistrer'),
+                style: FilledButton.styleFrom(minimumSize: const Size(132, 52)),
+                child: Text(editing ? 'Enregistrer' : 'Ajouter'),
               ),
             ],
           ),

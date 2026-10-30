@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router.dart';
+import '../../../app/theme/app_theme.dart';
 import '../../../core/files/file_storage_service.dart';
 import '../../../core/notifications/notification_service.dart';
 import '../../../core/utils/app_info.dart';
@@ -12,6 +14,8 @@ import '../data/settings_repository.dart';
 
 const _deadlineLeadOptions = [1, 3, 7, 14];
 const _expiryLeadOptions = [7, 14, 30, 60, 90];
+
+String _daysBefore(int d) => d == 1 ? '1 jour avant' : '$d jours avant';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -36,8 +40,8 @@ class SettingsScreen extends ConsumerWidget {
     if (!granted) {
       showMessage(
         context,
-        'Autorisation refusée. Activez les notifications de Dossia dans les '
-        'réglages Android pour recevoir les rappels.',
+        'Notifications refusées. Autorisez-les pour Dossia dans les '
+        'réglages Android.',
         error: true,
       );
       return;
@@ -45,7 +49,28 @@ class SettingsScreen extends ConsumerWidget {
     await runGuarded(
       context,
       () => repo.setBool(SettingKeys.notificationsEnabled, true),
-      success: 'Rappels activés.',
+      success: 'Rappels activés',
+    );
+  }
+
+  Future<void> _pickLeadDays(
+    BuildContext context,
+    WidgetRef ref, {
+    required String title,
+    required String key,
+    required List<int> options,
+    required int current,
+  }) async {
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) =>
+          _LeadDaysSheet(title: title, options: options, current: current),
+    );
+    if (picked == null || picked == current || !context.mounted) return;
+    await runGuarded(
+      context,
+      () => ref.read(settingsRepositoryProvider).setInt(key, picked),
     );
   }
 
@@ -54,20 +79,17 @@ class SettingsScreen extends ConsumerWidget {
       context,
       title: 'Supprimer toutes les données ?',
       message:
-          'Tous vos documents, fichiers joints, dossiers, pièces, tâches et '
-          'préférences seront effacés de ce téléphone. Cette action est '
-          'irréversible.\n\nSi vous souhaitez les conserver, créez d’abord '
-          'une sauvegarde.',
+          'Documents, fichiers joints, dossiers, tâches et préférences '
+          'seront effacés de ce téléphone. C’est irréversible.\n\n'
+          'Pour les garder, faites d’abord une sauvegarde.',
       confirmLabel: 'Continuer',
       destructive: true,
     );
     if (!first || !context.mounted) return;
     final second = await showConfirmDialog(
       context,
-      title: 'Confirmer la suppression',
-      message:
-          'Dernière confirmation : toutes les données de Dossia vont être '
-          'supprimées définitivement.',
+      title: 'Dernière confirmation',
+      message: 'Tout le contenu de Dossia va être supprimé définitivement.',
       confirmLabel: 'Tout supprimer',
       destructive: true,
     );
@@ -78,7 +100,7 @@ class SettingsScreen extends ConsumerWidget {
       await ref.read(fileStorageProvider).deleteAll();
     });
     if (ok && context.mounted) {
-      showMessage(context, 'Toutes les données ont été supprimées.');
+      showMessage(context, 'Toutes les données ont été supprimées');
       context.go(Routes.welcome);
     }
   }
@@ -87,151 +109,223 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final theme = Theme.of(context);
+    final status = StatusColors.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Réglages')),
       body: AsyncView(
         value: settings,
-        builder: (s) => ListView(
-          padding: const EdgeInsets.only(bottom: 32),
-          children: [
-            const SectionHeader('Rappels'),
-            SwitchListTile(
-              secondary: const Icon(Icons.notifications_outlined),
-              title: const Text('Activer les rappels'),
-              subtitle: const Text(
-                'Notifications locales avant les dates limites et les dates '
-                "d'expiration. Le contenu est masqué sur l'écran de "
-                'verrouillage.',
-              ),
-              value: s.notificationsEnabled,
-              onChanged: (v) => _toggleNotifications(context, ref, v),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: _LeadDaysField(
-                label: 'Rappel avant une date limite',
-                enabled: s.notificationsEnabled,
-                value: _deadlineLeadOptions.contains(s.deadlineReminderDays)
-                    ? s.deadlineReminderDays
-                    : 3,
-                options: _deadlineLeadOptions,
-                onChanged: (v) => ref
-                    .read(settingsRepositoryProvider)
-                    .setInt(SettingKeys.deadlineReminderDays, v),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: _LeadDaysField(
-                label: "Rappel avant l'expiration d'un document",
-                enabled: s.notificationsEnabled,
-                value: _expiryLeadOptions.contains(s.expiryReminderDays)
-                    ? s.expiryReminderDays
-                    : 30,
-                options: _expiryLeadOptions,
-                onChanged: (v) => ref
-                    .read(settingsRepositoryProvider)
-                    .setInt(SettingKeys.expiryReminderDays, v),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Un second rappel est envoyé le jour même, à 9 h. Android '
-                'peut décaler légèrement l’heure pour économiser la batterie.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+        builder: (s) {
+          final deadlineDays =
+              _deadlineLeadOptions.contains(s.deadlineReminderDays)
+              ? s.deadlineReminderDays
+              : 3;
+          final expiryDays = _expiryLeadOptions.contains(s.expiryReminderDays)
+              ? s.expiryReminderDays
+              : 30;
+          final enabled = s.notificationsEnabled;
+          final valueStyle = theme.textTheme.labelLarge?.copyWith(
+            color: enabled
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant,
+          );
+          final dimmed = theme.textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: enabled ? null : theme.colorScheme.onSurfaceVariant,
+          );
+
+          return CustomScrollView(
+            slivers: [
+              const LargeTitleAppBar(title: 'Réglages'),
+              const SliverToBoxAdapter(
+                child: SectionTitle(
+                  'Notifications',
+                  padding: EdgeInsets.fromLTRB(20, 8, 12, 10),
                 ),
               ),
-            ),
-            const SectionHeader('Données'),
-            ListTile(
-              leading: const Icon(Icons.backup_outlined),
-              title: const Text('Sauvegarde et restauration'),
-              subtitle: Text(
-                s.lastBackupAt == null
-                    ? 'Aucune sauvegarde effectuée'
-                    : 'Dernière sauvegarde : ${formatDateTime(s.lastBackupAt!)}',
+              SliverBox(
+                child: ListGroup(
+                  children: [
+                    MergeSemantics(
+                      child: AppRow(
+                        leading: const IconTile(Icons.notifications_outlined),
+                        title: 'Rappels',
+                        subtitle: 'Avant les dates limites et les expirations',
+                        chevron: false,
+                        onTap: () =>
+                            _toggleNotifications(context, ref, !enabled),
+                        trailing: Switch(
+                          value: enabled,
+                          onChanged: (v) {
+                            HapticFeedback.selectionClick();
+                            _toggleNotifications(context, ref, v);
+                          },
+                        ),
+                      ),
+                    ),
+                    AppRow(
+                      leading: const IconTile(Icons.event_outlined),
+                      title: 'Avant une date limite',
+                      titleStyle: dimmed,
+                      trailing: Text(
+                        _daysBefore(deadlineDays),
+                        style: valueStyle,
+                      ),
+                      chevron: enabled,
+                      onTap: enabled
+                          ? () => _pickLeadDays(
+                              context,
+                              ref,
+                              title: 'Rappel avant une date limite',
+                              key: SettingKeys.deadlineReminderDays,
+                              options: _deadlineLeadOptions,
+                              current: deadlineDays,
+                            )
+                          : null,
+                    ),
+                    AppRow(
+                      leading: const IconTile(Icons.update_rounded),
+                      title: 'Avant une expiration',
+                      titleStyle: dimmed,
+                      trailing: Text(
+                        _daysBefore(expiryDays),
+                        style: valueStyle,
+                      ),
+                      chevron: enabled,
+                      onTap: enabled
+                          ? () => _pickLeadDays(
+                              context,
+                              ref,
+                              title: 'Rappel avant une expiration',
+                              key: SettingKeys.expiryReminderDays,
+                              options: _expiryLeadOptions,
+                              current: expiryDays,
+                            )
+                          : null,
+                    ),
+                  ],
+                ),
               ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.push(Routes.backup),
-            ),
-            ListTile(
-              leading: const Icon(Icons.playlist_add_check),
-              title: const Text('Compléter mon inventaire'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.push(Routes.inventory),
-            ),
-            ListTile(
-              leading: const Icon(Icons.privacy_tip_outlined),
-              title: const Text('Confidentialité et stockage'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.push(Routes.privacy),
-            ),
-            const SectionHeader('Zone sensible'),
-            ListTile(
-              leading: Icon(
-                Icons.delete_forever_outlined,
-                color: theme.colorScheme.error,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                  child: Text(
+                    'Un second rappel arrive le jour même, vers 9 h.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
               ),
-              title: Text(
-                'Supprimer toutes les données',
-                style: TextStyle(color: theme.colorScheme.error),
+              const SliverToBoxAdapter(child: SectionTitle('Données')),
+              SliverBox(
+                child: ListGroup(
+                  children: [
+                    AppRow(
+                      leading: const IconTile(Icons.cloud_upload_outlined),
+                      title: 'Sauvegarde et restauration',
+                      subtitle: s.lastBackupAt == null
+                          ? 'Aucune sauvegarde pour l’instant'
+                          : 'Dernière le ${formatCompactDate(s.lastBackupAt!.toLocal())}',
+                      onTap: () => context.push(Routes.backup),
+                    ),
+                    AppRow(
+                      leading: const IconTile(Icons.playlist_add_check_rounded),
+                      title: 'Compléter mon inventaire',
+                      onTap: () => context.push(Routes.inventory),
+                    ),
+                    AppRow(
+                      leading: const IconTile(Icons.shield_outlined),
+                      title: 'Confidentialité et stockage',
+                      onTap: () => context.push(Routes.privacy),
+                    ),
+                  ],
+                ),
               ),
-              subtitle: const Text('Efface tout le contenu de Dossia'),
-              onTap: () => _wipe(context, ref),
-            ),
-            const SectionHeader('À propos'),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('Dossia'),
-              subtitle: const Text(
-                'Version $appVersion · Fonctionne hors ligne, sans compte',
+              const SliverToBoxAdapter(child: SectionTitle('Zone sensible')),
+              SliverBox(
+                child: Panel(
+                  child: AppRow(
+                    leading: IconTile(
+                      Icons.delete_outline_rounded,
+                      background: status.danger,
+                      foreground: status.onDanger,
+                    ),
+                    title: 'Supprimer toutes les données',
+                    titleStyle: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: status.onDanger,
+                    ),
+                    subtitle: 'Efface tout le contenu de Dossia',
+                    chevron: false,
+                    onTap: () => _wipe(context, ref),
+                  ),
+                ),
               ),
-              onTap: () => showLicensePage(
-                context: context,
-                applicationName: 'Dossia',
-                applicationVersion: appVersion,
+              const SliverToBoxAdapter(child: SectionTitle('À propos')),
+              SliverBox(
+                child: Panel(
+                  child: AppRow(
+                    leading: const IconTile(Icons.info_outline_rounded),
+                    title: 'Dossia $appVersion',
+                    subtitle: 'Hors ligne, sans compte · Licences',
+                    onTap: () => showLicensePage(
+                      context: context,
+                      applicationName: 'Dossia',
+                      applicationVersion: appVersion,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
-/// Choix du délai de rappel, sur toute la largeur pour rester lisible avec
-/// une grande taille de texte.
-class _LeadDaysField extends StatelessWidget {
-  const _LeadDaysField({
-    required this.label,
-    required this.enabled,
-    required this.value,
+class _LeadDaysSheet extends StatelessWidget {
+  const _LeadDaysSheet({
+    required this.title,
     required this.options,
-    required this.onChanged,
+    required this.current,
   });
 
-  final String label;
-  final bool enabled;
-  final int value;
+  final String title;
   final List<int> options;
-  final ValueChanged<int> onChanged;
+  final int current;
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<int>(
-      isExpanded: true,
-      initialValue: value,
-      decoration: InputDecoration(labelText: label, enabled: enabled),
-      onChanged: enabled ? (v) => onChanged(v!) : null,
-      items: [
-        for (final d in options)
-          DropdownMenuItem(
-            value: d,
-            child: Text('$d jour${d > 1 ? 's' : ''} avant'),
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Text(title, style: theme.textTheme.titleLarge),
           ),
-      ],
+          RadioGroup<int>(
+            groupValue: current,
+            onChanged: (v) {
+              HapticFeedback.selectionClick();
+              Navigator.of(context).pop(v);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final d in options)
+                  RadioListTile<int>(
+                    value: d,
+                    title: Text(_daysBefore(d)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

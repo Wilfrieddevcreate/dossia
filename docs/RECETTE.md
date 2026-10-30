@@ -87,7 +87,7 @@ restauration, écran de confidentialité, suppression de toutes les données.
   sauvegardes (protection par l'isolation Android et le chiffrement du
   téléphone). Les sauvegardes .zip sont lisibles par qui y accède.
 - **Signature de debug** : l'APK de test n'est pas publiable tel quel sur
-  Google Play (voir `TECHNIQUE.md` § 11).
+  Google Play (voir `TECHNIQUE.md` § 12).
 - **Rappels** : heure approximative (mode inexact) ; certains fabricants
   (économiseurs de batterie agressifs) peuvent les retarder ou les bloquer.
 - **Fuseau horaire** : les horodatages d'une sauvegarde (création,

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router.dart';
+import '../../../app/theme/app_theme.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/files/file_storage_service.dart';
 import '../../../core/utils/dates.dart';
@@ -61,30 +64,29 @@ class _DocumentDetailView extends ConsumerWidget {
         await runGuarded(
           context,
           () => repo.setArchived(view.id, archive),
-          success: archive
-              ? 'Document archivé. Il reste associé à ses dossiers.'
-              : 'Document réactivé.',
+          success: archive ? 'Document archivé' : 'Document réactivé',
+          onUndo: () => repo.setArchived(view.id, !archive).ignore(),
         );
       case _MenuAction.delete:
         final usages = detail.usages;
+        final files = detail.files.length;
         final buffer = StringBuffer(
-          '« ${view.displayName} » sera supprimé définitivement de votre '
-          'bibliothèque.',
+          '« ${view.displayName} » sera supprimé définitivement',
         );
-        if (detail.files.isNotEmpty) {
-          buffer.write(
-            ' Ses ${detail.files.length} fichier(s) joint(s) seront effacés.',
-          );
-        }
+        buffer.write(
+          files == 0
+              ? '.'
+              : files == 1
+              ? ', avec son fichier joint.'
+              : ', avec ses $files fichiers joints.',
+        );
         if (usages.isNotEmpty) {
           buffer.write(
-            '\n\nIl est utilisé dans ${usages.length} pièce(s) :\n'
-            '${usages.map((u) => '• ${u.itemName} — ${u.dossierTitle}').join('\n')}'
-            '\n\nCes associations seront retirées et les pièces concernées '
-            'redeviendront manquantes.',
+            '\n\n${usages.length == 1 ? 'Cette pièce redeviendra manquante' : 'Ces ${usages.length} pièces redeviendront manquantes'} :\n'
+            '${usages.map((u) => '• ${u.itemName} — ${u.dossierTitle}').join('\n')}',
           );
         }
-        buffer.write('\n\nPour le conserver sans l’afficher, archivez-le.');
+        buffer.write('\n\nPour simplement le ranger, archivez-le.');
         final confirmed = await showConfirmDialog(
           context,
           title: 'Supprimer ce document ?',
@@ -98,7 +100,7 @@ class _DocumentDetailView extends ConsumerWidget {
           () => repo.deleteDocument(view.id),
         );
         if (ok && context.mounted) {
-          showMessage(context, 'Document supprimé.');
+          showMessage(context, 'Document supprimé');
           context.pop();
         }
     }
@@ -116,7 +118,7 @@ class _DocumentDetailView extends ConsumerWidget {
             source: picked.file,
             originalName: picked.name,
           ),
-      success: 'Fichier joint.',
+      success: 'Fichier joint',
     );
   }
 
@@ -129,8 +131,8 @@ class _DocumentDetailView extends ConsumerWidget {
       context,
       title: 'Retirer ce fichier ?',
       message:
-          '« ${file.fileName} » sera effacé de l’espace privé de Dossia. '
-          'Le document reste dans votre bibliothèque.',
+          '« ${file.fileName} » sera effacé de Dossia. Le document reste '
+          'dans votre bibliothèque.',
       confirmLabel: 'Retirer',
       destructive: true,
     );
@@ -138,7 +140,7 @@ class _DocumentDetailView extends ConsumerWidget {
     await runGuarded(
       context,
       () => ref.read(documentsRepositoryProvider).removeFile(file),
-      success: 'Fichier retiré.',
+      success: 'Fichier retiré',
     );
   }
 
@@ -148,219 +150,254 @@ class _DocumentDetailView extends ConsumerWidget {
     final today = ref.watch(todayProvider);
     final doc = view.doc;
     final expiryState = view.expiryState(today);
+    final muted = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(view.displayName, overflow: TextOverflow.ellipsis),
-        actions: [
-          IconButton(
-            tooltip: 'Modifier',
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => context.push(Routes.editDocument(view.id)),
-          ),
-          PopupMenuButton<_MenuAction>(
-            tooltip: "Plus d'actions",
-            onSelected: (a) => _onMenu(context, ref, a),
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: _MenuAction.archive,
-                child: Text(view.isArchived ? 'Réactiver' : 'Archiver'),
-              ),
-              const PopupMenuItem(
-                value: _MenuAction.delete,
-                child: Text('Supprimer'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+    final info = <(String, String)>[
+      if (doc.issueDate != null)
+        ('Délivré le', formatLongDate(doc.issueDate!)),
+      if (doc.expiryDate != null)
+        (
+          'Expire le',
+          '${formatLongDate(doc.expiryDate!)} · '
+              '${relativeDayLabel(doc.expiryDate!, reference: today)}',
+        ),
+      if (doc.issuer != null) ('Autorité émettrice', doc.issuer!),
+      if (doc.notes != null) ('Notes', doc.notes!),
+    ];
+    final incomplete =
+        doc.issueDate == null ||
+        doc.expiryDate == null ||
+        doc.issuer == null ||
+        doc.notes == null;
+
+    PopupMenuItem<_MenuAction> item(
+      _MenuAction value,
+      IconData icon,
+      String label, {
+      bool danger = false,
+    }) => PopupMenuItem(
+      value: value,
+      child: Row(
         children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 26,
-                backgroundColor: theme.colorScheme.primaryContainer,
-                foregroundColor: theme.colorScheme.onPrimaryContainer,
-                child: Icon(documentCategoryIcon(view.category)),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(view.displayName, style: theme.textTheme.titleLarge),
-                    Text(
-                      '${view.type.name} · ${view.category.label}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          Icon(
+            icon,
+            size: 20,
+            color: danger
+                ? theme.colorScheme.error
+                : theme.colorScheme.onSurfaceVariant,
           ),
-          if (view.isArchived ||
-              expiryState == ExpiryState.expired ||
-              expiryState == ExpiryState.expiringSoon) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: [
-                if (view.isArchived) const ArchivedChip(),
-                ExpiryChip(expiryState, dense: false),
-              ],
-            ),
-          ],
-          const SizedBox(height: 16),
-          Card(
-            child: Column(
-              children: [
-                _InfoRow(
-                  label: 'Date de délivrance',
-                  value: doc.issueDate == null
-                      ? null
-                      : formatLongDate(doc.issueDate!),
-                ),
-                _InfoRow(
-                  label: "Date d'expiration",
-                  value: doc.expiryDate == null
-                      ? null
-                      : '${formatLongDate(doc.expiryDate!)} '
-                            '(${relativeDayLabel(doc.expiryDate!, reference: today)})',
-                ),
-                _InfoRow(label: 'Autorité émettrice', value: doc.issuer),
-                _InfoRow(label: 'Notes', value: doc.notes, last: true),
-              ],
-            ),
-          ),
-          SectionHeader(
-            'Fichiers joints',
-            padding: const EdgeInsets.fromLTRB(0, 24, 0, 8),
-            trailing: TextButton.icon(
-              onPressed: () => _addFile(context, ref),
-              icon: const Icon(Icons.attach_file),
-              label: const Text('Joindre'),
-            ),
-          ),
-          if (detail.files.isEmpty)
-            Text(
-              'Aucun fichier. Le fichier numérique est facultatif.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            )
-          else
-            Card(
-              child: Column(
-                children: [
-                  for (final f in detail.files)
-                    _FileTile(
-                      file: f,
-                      onOpen: () => openAttachment(context, ref, f),
-                      onRemove: () => _removeFile(context, ref, f),
-                    ),
-                ],
-              ),
-            ),
-          SectionHeader(
-            'Utilisé dans',
-            padding: const EdgeInsets.fromLTRB(0, 24, 0, 8),
-          ),
-          if (detail.usages.isEmpty)
-            Text(
-              "Ce document n'est associé à aucune pièce de dossier.",
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            )
-          else
-            Card(
-              child: Column(
-                children: [
-                  for (final u in detail.usages)
-                    ListTile(
-                      leading: const Icon(Icons.folder_outlined),
-                      title: Text(u.dossierTitle),
-                      subtitle: Text(
-                        u.dossierArchived
-                            ? '${u.itemName} · dossier archivé'
-                            : u.itemName,
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () =>
-                          context.push(Routes.item(u.dossierId, u.itemId)),
-                    ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 24),
+          const SizedBox(width: 14),
           Text(
-            'Ajouté le ${formatDateTime(doc.createdAt)} · '
-            'modifié le ${formatDateTime(doc.updatedAt)}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            label,
+            style: danger ? TextStyle(color: theme.colorScheme.error) : null,
           ),
         ],
       ),
     );
-  }
-}
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, this.value, this.last = false});
-
-  final String label;
-  final String? value;
-  final bool last;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 2,
-                child: Text(
-                  label,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+    return DetailScaffold(
+      title: view.displayName,
+      actions: [
+        IconButton(
+          tooltip: 'Modifier',
+          icon: const Icon(Icons.edit_outlined),
+          onPressed: () => context.push(Routes.editDocument(view.id)),
+        ),
+        PopupMenuButton<_MenuAction>(
+          tooltip: "Plus d'actions",
+          icon: const Icon(Icons.more_vert_rounded),
+          onSelected: (a) => _onMenu(context, ref, a),
+          itemBuilder: (_) => [
+            item(
+              _MenuAction.archive,
+              view.isArchived
+                  ? Icons.unarchive_outlined
+                  : Icons.archive_outlined,
+              view.isArchived ? 'Réactiver' : 'Archiver',
+            ),
+            item(
+              _MenuAction.delete,
+              Icons.delete_outline_rounded,
+              'Supprimer',
+              danger: true,
+            ),
+          ],
+        ),
+      ],
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CategoryAvatar(view.category, size: 56),
+                const SizedBox(height: 16),
+                Text(view.displayName, style: theme.textTheme.headlineSmall),
+                const SizedBox(height: 4),
+                Text(
+                  view.displayName == view.type.name
+                      ? view.category.label
+                      : '${view.type.name} · ${view.category.label}',
+                  style: muted,
+                ),
+                if (view.isArchived ||
+                    expiryState == ExpiryState.expired ||
+                    expiryState == ExpiryState.expiringSoon) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (view.isArchived) const ArchivedChip(),
+                      ExpiryChip(expiryState, dense: false),
+                    ],
                   ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        SliverBox(
+          child: ListGroup(
+            dividerIndent: 16,
+            children: [
+              for (final (label, value) in info)
+                _InfoRow(label: label, value: value),
+              if (incomplete)
+                AppRow(
+                  dense: true,
+                  leading: Icon(
+                    Icons.add_rounded,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: info.isEmpty
+                      ? 'Ajouter des dates ou des précisions'
+                      : 'Compléter',
+                  titleStyle: theme.textTheme.bodyLarge?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  chevron: false,
+                  onTap: () => context.push(Routes.editDocument(view.id)),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 3,
-                child: Text(
-                  value ?? 'Non renseigné',
-                  style: value == null
-                      ? theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontStyle: FontStyle.italic,
-                        )
-                      : theme.textTheme.bodyMedium,
+            ],
+          ),
+        ),
+        const SliverToBoxAdapter(child: SectionTitle('Fichiers')),
+        SliverBox(
+          child: ListGroup(
+            children: [
+              for (final f in detail.files)
+                _FileRow(
+                  file: f,
+                  onOpen: () => openAttachment(context, ref, f),
+                  onRemove: () => _removeFile(context, ref, f),
                 ),
+              AppRow(
+                dense: detail.files.isNotEmpty,
+                leading: IconTile(
+                  Icons.attach_file_rounded,
+                  size: 44,
+                  background: theme.colorScheme.primaryContainer,
+                  foreground: theme.colorScheme.onPrimaryContainer,
+                ),
+                title: 'Joindre un fichier',
+                titleStyle: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+                subtitle: detail.files.isEmpty
+                    ? 'PDF ou photo, facultatif'
+                    : null,
+                chevron: false,
+                onTap: () => _addFile(context, ref),
               ),
             ],
           ),
         ),
-        if (!last) const Divider(indent: 16, endIndent: 16),
+        const SliverToBoxAdapter(child: SectionTitle('Utilisé dans')),
+        SliverBox(
+          child: detail.usages.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    'Pas encore associé à un dossier.',
+                    style: muted,
+                  ),
+                )
+              : ListGroup(
+                  children: [
+                    for (final u in detail.usages)
+                      AppRow(
+                        leading: const IconTile(Icons.folder_outlined),
+                        title: u.dossierTitle,
+                        subtitle: u.dossierArchived
+                            ? '${u.itemName} · dossier archivé'
+                            : u.itemName,
+                        onTap: () =>
+                            context.push(Routes.item(u.dossierId, u.itemId)),
+                      ),
+                  ],
+                ),
+        ),
+        SliverBox(
+          padding: const EdgeInsets.fromLTRB(20, 28, 20, 40),
+          child: Text(
+            doc.updatedAt.difference(doc.createdAt).inMinutes < 1
+                ? 'Ajouté le ${formatDateTime(doc.createdAt)}'
+                : 'Ajouté le ${formatDateTime(doc.createdAt)}\n'
+                      'Modifié le ${formatDateTime(doc.updatedAt)}',
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
       ],
     );
   }
 }
 
-/// Fichier joint ; un fichier absent du stockage est signalé (§ 9.2).
-class _FileTile extends ConsumerWidget {
-  const _FileTile({
+/// Information du document : libellé discret au-dessus de la valeur.
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      label: '$label : $value',
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: SizedBox(
+          width: double.infinity,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: theme.textTheme.bodySmall),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Fichier joint, avec vignette pour les images ; un fichier absent du
+/// stockage est signalé (§ 9.2).
+class _FileRow extends ConsumerStatefulWidget {
+  const _FileRow({
     required this.file,
     required this.onOpen,
     required this.onRemove,
@@ -371,31 +408,79 @@ class _FileTile extends ConsumerWidget {
   final VoidCallback onRemove;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return FutureBuilder(
-      future: ref.read(fileStorageProvider).resolve(file.relativePath),
+  ConsumerState<_FileRow> createState() => _FileRowState();
+}
+
+class _FileRowState extends ConsumerState<_FileRow> {
+  late Future<File?> _resolved;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_FileRow old) {
+    super.didUpdateWidget(old);
+    if (old.file.relativePath != widget.file.relativePath) _resolve();
+  }
+
+  void _resolve() {
+    _resolved = ref.read(fileStorageProvider).resolve(widget.file.relativePath);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = StatusColors.of(context);
+    final file = widget.file;
+    return FutureBuilder<File?>(
+      future: _resolved,
       builder: (context, snapshot) {
-        final missing =
-            snapshot.connectionState == ConnectionState.done &&
-            snapshot.data == null;
-        return ListTile(
-          leading: Icon(
-            missing ? Icons.report_problem_outlined : attachmentIcon(file.mimeType),
-            color: missing ? theme.colorScheme.error : null,
-          ),
-          title: Text(file.fileName, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
+        final done = snapshot.connectionState == ConnectionState.done;
+        final resolved = snapshot.data;
+        final missing = done && resolved == null;
+        final Widget thumb;
+        if (missing) {
+          thumb = IconTile(
+            Icons.report_problem_outlined,
+            size: 44,
+            background: status.danger,
+            foreground: status.onDanger,
+          );
+        } else if (resolved != null && isImageMime(file.mimeType)) {
+          thumb = ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Image.file(
+              resolved,
+              width: 44,
+              height: 44,
+              fit: BoxFit.cover,
+              cacheWidth: 132,
+              excludeFromSemantics: true,
+              errorBuilder: (_, _, _) =>
+                  const IconTile(Icons.image_outlined, size: 44),
+            ),
+          );
+        } else {
+          thumb = IconTile(attachmentIcon(file.mimeType), size: 44);
+        }
+        return AppRow(
+          leading: thumb,
+          title: file.fileName,
+          subtitleWidget: Text(
             missing
-                ? 'Fichier introuvable sur cet appareil'
+                ? 'Fichier introuvable sur ce téléphone'
                 : formatFileSize(file.sizeBytes),
-            style: missing ? TextStyle(color: theme.colorScheme.error) : null,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: missing ? status.onDanger : null,
+            ),
           ),
-          onTap: onOpen,
+          onTap: widget.onOpen,
           trailing: IconButton(
             tooltip: 'Retirer ${file.fileName}',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: onRemove,
+            icon: const Icon(Icons.delete_outline_rounded),
+            onPressed: widget.onRemove,
           ),
         );
       },

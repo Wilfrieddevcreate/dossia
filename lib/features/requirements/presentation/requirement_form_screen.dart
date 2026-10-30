@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router.dart';
+import '../../../app/theme/app_theme.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/form_fields.dart';
@@ -107,14 +108,14 @@ class _RequirementFormScreenState extends ConsumerState<RequirementFormScreen> {
       // Le détail de la pièce propose les documents correspondants.
       context.pushReplacement(Routes.item(widget.dossierId, createdId!));
     } else {
-      showMessage(context, 'Pièce mise à jour.');
+      showMessage(context, 'Pièce mise à jour');
       context.pop();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final palette = AppPalette.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.isEditing ? 'Modifier la pièce' : 'Nouvelle pièce'),
@@ -129,114 +130,148 @@ class _RequirementFormScreenState extends ConsumerState<RequirementFormScreen> {
           : Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 children: [
-                  Text(
-                    'Choisissez un type de document pour que Dossia retrouve '
-                    'les documents correspondants, ou saisissez simplement un '
-                    'nom.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  formGap,
-                  FormField<DocumentTypeRow>(
-                    validator: (_) =>
-                        (_type == null && _customName.text.trim().isEmpty)
-                        ? 'Choisissez un type ou saisissez un nom.'
-                        : null,
-                    builder: (state) => Semantics(
-                      button: true,
-                      label: 'Type de document',
-                      value: _type?.name ?? 'Non choisi',
-                      excludeSemantics: true,
-                      child: InkWell(
-                        onTap: _pickType,
-                        borderRadius: BorderRadius.circular(12),
-                        child: InputDecorator(
-                          isEmpty: _type == null,
-                          decoration: InputDecoration(
-                            labelText: 'Type de document',
-                            errorText: state.errorText,
-                            prefixIcon: _type == null
-                                ? null
-                                : Icon(documentCategoryIcon(_type!.category)),
-                            suffixIcon: _type == null
-                                ? const Icon(Icons.arrow_drop_down)
-                                : IconButton(
-                                    tooltip: 'Retirer le type',
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () =>
-                                        setState(() => _type = null),
-                                  ),
+                  FormSection(
+                    title: 'Pièce',
+                    children: [
+                      FormField<DocumentTypeRow>(
+                        validator: (_) =>
+                            (_type == null && _customName.text.trim().isEmpty)
+                            ? 'Choisissez un type ou saisissez un nom.'
+                            : null,
+                        builder: (state) => Semantics(
+                          button: true,
+                          label: 'Type de document',
+                          value: _type?.name ?? 'Non choisi',
+                          excludeSemantics: true,
+                          child: InkWell(
+                            onTap: _pickType,
+                            borderRadius: BorderRadius.circular(14),
+                            child: InputDecorator(
+                              isEmpty: _type == null,
+                              decoration: InputDecoration(
+                                labelText: 'Type de document',
+                                helperText: _type == null
+                                    ? 'Dossia retrouvera vos documents de ce type.'
+                                    : null,
+                                errorText: state.errorText,
+                                prefixIcon: _type == null
+                                    ? const Icon(Icons.category_outlined)
+                                    : Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        child: CategoryAvatar(
+                                          _type!.category,
+                                          size: 30,
+                                        ),
+                                      ),
+                                suffixIcon: _type == null
+                                    ? const Icon(Icons.expand_more_rounded)
+                                    : IconButton(
+                                        tooltip: 'Retirer le type',
+                                        icon: const Icon(Icons.close_rounded),
+                                        onPressed: () =>
+                                            setState(() => _type = null),
+                                      ),
+                              ),
+                              child: Text(_type?.name ?? ''),
+                            ),
                           ),
-                          child: Text(_type?.name ?? ''),
                         ),
                       ),
-                    ),
+                      TextFormField(
+                        controller: _customName,
+                        textCapitalization: TextCapitalization.sentences,
+                        maxLength: 160,
+                        decoration: InputDecoration(
+                          counterText: '',
+                          labelText: _type == null
+                              ? 'Nom de la pièce'
+                              : 'Nom personnalisé (facultatif)',
+                          hintText: _type == null
+                              ? 'ex. Formulaire de demande signé'
+                              : 'ex. ${_type!.name} (copie certifiée)',
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ],
                   ),
-                  formGap,
-                  TextFormField(
-                    controller: _customName,
-                    textCapitalization: TextCapitalization.sentences,
-                    maxLength: 160,
-                    decoration: InputDecoration(
-                      labelText: _type == null
-                          ? 'Nom de la pièce'
-                          : 'Nom personnalisé (facultatif)',
-                      hintText: _type == null
-                          ? 'ex. Formulaire de demande signé'
-                          : 'ex. ${_type!.name} (copie certifiée)',
-                    ),
-                    onChanged: (_) => setState(() {}),
+                  FormSection(
+                    title: 'Exigence',
+                    children: [
+                      Material(
+                        color: palette.muted,
+                        borderRadius: BorderRadius.circular(14),
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(
+                          children: [
+                            SwitchListTile(
+                              contentPadding: const EdgeInsets.fromLTRB(
+                                16,
+                                4,
+                                12,
+                                4,
+                              ),
+                              title: const Text('Pièce obligatoire'),
+                              subtitle: Text(
+                                _mandatory
+                                    ? 'Compte dans la progression'
+                                    : 'Ne réduit pas la progression',
+                              ),
+                              value: _mandatory,
+                              onChanged: (v) => setState(() => _mandatory = v),
+                            ),
+                            Divider(
+                              indent: 16,
+                              endIndent: 16,
+                              color: palette.hairlineStrong,
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+                              child: QuantityStepper(
+                                label: 'Quantité attendue',
+                                value: _quantity,
+                                onChanged: (v) => setState(() => _quantity = v),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Pièce obligatoire'),
-                    subtitle: Text(
-                      _mandatory
-                          ? 'Compte dans la progression du dossier.'
-                          : 'Facultative : ne réduit pas la progression.',
-                    ),
-                    value: _mandatory,
-                    onChanged: (v) => setState(() => _mandatory = v),
+                  FormSection(
+                    title: 'Précisions',
+                    children: [
+                      TextFormField(
+                        controller: _instructions,
+                        textCapitalization: TextCapitalization.sentences,
+                        minLines: 2,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Instructions',
+                          hintText: 'ex. Copie légalisée de moins de 3 mois',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      TextFormField(
+                        controller: _notes,
+                        textCapitalization: TextCapitalization.sentences,
+                        minLines: 2,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Note',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                      DateField(
+                        label: 'À fournir avant le',
+                        initialValue: _dueDate,
+                        onChanged: (d) => setState(() => _dueDate = d),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  QuantityStepper(
-                    label: 'Quantité attendue',
-                    value: _quantity,
-                    onChanged: (v) => setState(() => _quantity = v),
-                  ),
-                  formGap,
-                  TextFormField(
-                    controller: _instructions,
-                    textCapitalization: TextCapitalization.sentences,
-                    minLines: 2,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      labelText: 'Instructions (facultatives)',
-                      hintText: 'ex. Copie légalisée de moins de 3 mois',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                  formGap,
-                  TextFormField(
-                    controller: _notes,
-                    textCapitalization: TextCapitalization.sentences,
-                    minLines: 2,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      labelText: 'Note (facultative)',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                  formGap,
-                  DateField(
-                    label: 'À fournir avant le (facultatif)',
-                    initialValue: _dueDate,
-                    onChanged: (d) => setState(() => _dueDate = d),
-                  ),
-                  const SizedBox(height: 24),
                 ],
               ),
             ),
