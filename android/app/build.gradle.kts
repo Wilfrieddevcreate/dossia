@@ -48,4 +48,6 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Thème AppCompat de l'activité, requis par l'invite biométrique.
+    implementation("androidx.appcompat:appcompat:1.7.0")
 }

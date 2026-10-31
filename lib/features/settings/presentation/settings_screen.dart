@@ -7,6 +7,7 @@ import '../../../app/router.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../core/files/file_storage_service.dart';
 import '../../../core/notifications/notification_service.dart';
+import '../../../core/security/app_lock.dart';
 import '../../../core/utils/app_info.dart';
 import '../../../core/utils/dates.dart';
 import '../../../core/widgets/common.dart';
@@ -51,6 +52,40 @@ class SettingsScreen extends ConsumerWidget {
       () => repo.setBool(SettingKeys.notificationsEnabled, true),
       success: 'Rappels activés',
     );
+  }
+
+  Future<void> _toggleLock(
+    BuildContext context,
+    WidgetRef ref,
+    bool enable,
+  ) async {
+    final outcome = await ref.read(appLockProvider.notifier).setEnabled(enable);
+    if (!context.mounted) return;
+    switch (outcome) {
+      case AuthOutcome.success:
+        HapticFeedback.lightImpact();
+        showMessage(
+          context,
+          enable ? 'Verrouillage activé' : 'Verrouillage désactivé',
+        );
+      case AuthOutcome.unavailable:
+        showMessage(
+          context,
+          'Configurez d’abord un code, un schéma ou une empreinte dans les '
+          'réglages du téléphone.',
+          error: true,
+        );
+      case AuthOutcome.lockedOut:
+        showMessage(
+          context,
+          'Trop de tentatives. Réessayez dans quelques instants.',
+          error: true,
+        );
+      case AuthOutcome.failed:
+        showMessage(context, 'Authentification impossible.', error: true);
+      case AuthOutcome.cancelled:
+        break;
+    }
   }
 
   Future<void> _pickLeadDays(
@@ -213,6 +248,41 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ),
               ),
+              const SliverToBoxAdapter(child: SectionTitle('Sécurité')),
+              SliverBox(
+                child: ListGroup(
+                  children: [
+                    MergeSemantics(
+                      child: AppRow(
+                        leading: const IconTile(Icons.lock_outline_rounded),
+                        title: 'Verrouiller Dossia',
+                        subtitle: 'Empreinte, visage ou code du téléphone',
+                        chevron: false,
+                        onTap: () =>
+                            _toggleLock(context, ref, !s.appLockEnabled),
+                        trailing: Switch(
+                          value: s.appLockEnabled,
+                          onChanged: (v) {
+                            HapticFeedback.selectionClick();
+                            _toggleLock(context, ref, v);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (s.appLockEnabled)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                    child: Text(
+                      'Dossia se verrouille à l’ouverture et après 30 secondes '
+                      'hors de l’application.',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ),
               const SliverToBoxAdapter(child: SectionTitle('Données')),
               SliverBox(
                 child: ListGroup(

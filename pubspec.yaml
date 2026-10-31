@@ -54,6 +54,10 @@ dependencies:
   collection: ^1.19.1
   flutter_localizations:
     sdk: flutter
+  image_picker: ^1.2.4
+  local_auth: ^3.0.2
+  cryptography: ^2.9.0
+  local_auth_android: ^2.3.0
 
 dev_dependencies:
   flutter_test:

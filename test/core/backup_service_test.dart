@@ -579,4 +579,169 @@ void main() {
       await expectRejected(broken, contains('chemin de fichier non autorisé'));
     });
   });
+
+  group('sauvegarde protégée par mot de passe', () {
+    const password = 'Cotonou-2026!';
+    late BackupService secured;
+
+    setUp(() {
+      // Itérations réduites pour la vitesse des tests.
+      secured = BackupService(
+        db: db,
+        files: files,
+        workDirectory: () async => work,
+        appVersion: 'test',
+        kdfIterations: 1000,
+      );
+    });
+
+    List<String> workEntries() =>
+        work.listSync().map((e) => p.basename(e.path)).toList()..sort();
+
+    test('aller-retour complet avec mot de passe', () async {
+      final attachment = await seed();
+      final before = await snapshot();
+
+      final archive = await secured.createBackup(
+        includeFiles: true,
+        password: password,
+      );
+      expect(p.extension(archive.path), '.dossia');
+      expect(await secured.isEncryptedBackup(archive), isTrue);
+      expect((await settings())[SettingKeys.lastBackupAt], isNotNull);
+      // Aucune archive en clair ne reste après le chiffrement.
+      expect(workEntries(), [p.basename(archive.path)]);
+      // Le contenu en clair n'apparaît pas dans le fichier chiffré.
+      final raw = await archive.readAsBytes();
+      expect(latin1.decode(raw).contains('Visa France'), isFalse);
+      expect(latin1.decode(raw).contains('manifest.json'), isFalse);
+
+      await expectLater(
+        secured.inspectBackup(archive),
+        throwsA(isA<BackupPasswordRequired>()),
+      );
+      await expectLater(
+        secured.inspectBackup(archive, password: 'mauvais-mot-de-passe'),
+        throwsA(
+          isA<BackupWrongPassword>().having(
+            (e) => e.message,
+            'message',
+            'Mot de passe incorrect.',
+          ),
+        ),
+      );
+      final preview = await secured.inspectBackup(archive, password: password);
+      expect(preview.documentCount, 2);
+      expect(preview.dossierCount, 1);
+      expect(preview.fileCount, 1);
+      expect(preview.missingFileCount, 0);
+      expect(workEntries(), [p.basename(archive.path)]);
+
+      await alterLocalData();
+      await expectLater(
+        secured.restoreBackup(archive),
+        throwsA(isA<BackupPasswordRequired>()),
+      );
+      expect((await snapshot())['dossiers'], hasLength(1));
+
+      await secured.restoreBackup(archive, password: password);
+      final after = await snapshot();
+      for (final table in before.keys) {
+        expect(after[table], before[table], reason: table);
+      }
+      final restored = await files.resolve(attachment.relativePath);
+      expect(await restored!.readAsBytes(), attachment.bytes);
+      // Ni archive en clair ni répertoire temporaire après la restauration.
+      expect(workEntries(), [p.basename(archive.path)]);
+    });
+
+    test('mot de passe trop court refusé', () async {
+      await seed();
+      await expectLater(
+        secured.createBackup(includeFiles: false, password: '1234567'),
+        throwsA(
+          isA<BackupException>().having(
+            (e) => e.message,
+            'message',
+            contains('8 caractères'),
+          ),
+        ),
+      );
+      expect(workEntries(), isEmpty);
+    });
+
+    test('sauvegarde chiffrée endommagée : données locales intactes', () async {
+      await seed();
+      final archive = await secured.createBackup(
+        includeFiles: false,
+        password: password,
+      );
+      final bytes = await archive.readAsBytes();
+      bytes[bytes.length - 3] ^= 0x01;
+      await archive.writeAsBytes(bytes);
+      final before = await snapshot();
+      await expectLater(
+        secured.restoreBackup(archive, password: password),
+        throwsA(
+          isA<BackupException>().having(
+            (e) => e.message,
+            'message',
+            contains('endommagée'),
+          ),
+        ),
+      );
+      final after = await snapshot();
+      for (final table in before.keys) {
+        expect(after[table], before[table], reason: table);
+      }
+      expect(workEntries(), [p.basename(archive.path)]);
+    });
+
+    test(
+      'remplace aussi les sauvegardes précédentes, chiffrées ou non',
+      () async {
+        await seed();
+        await secured.createBackup(includeFiles: false);
+        await secured.createBackup(includeFiles: false, password: password);
+        final archives = work.listSync().where(
+          (e) => p.basename(e.path).startsWith('dossia-sauvegarde-'),
+        );
+        expect(archives, hasLength(1));
+        expect(p.extension(archives.single.path), '.dossia');
+      },
+    );
+
+    test(
+      'une sauvegarde non chiffrée reste lisible sans mot de passe',
+      () async {
+        await seed();
+        final archive = await secured.createBackup(includeFiles: false);
+        expect(await secured.isEncryptedBackup(archive), isFalse);
+        final preview = await secured.inspectBackup(
+          archive,
+          password: 'ignoré',
+        );
+        expect(preview.documentCount, 2);
+      },
+    );
+
+    test('le plancher d’itérations réel refuse un fichier de test', () async {
+      await seed();
+      final archive = await secured.createBackup(
+        includeFiles: false,
+        password: password,
+      );
+      // Service de production : 1000 itérations sont sous le plancher.
+      await expectLater(
+        service.inspectBackup(archive, password: password),
+        throwsA(
+          isA<BackupException>().having(
+            (e) => e.message,
+            'message',
+            contains('endommagée'),
+          ),
+        ),
+      );
+    });
+  });
 }

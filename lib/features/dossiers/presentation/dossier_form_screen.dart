@@ -9,6 +9,7 @@ import '../../../core/models/dossier_category.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/form_fields.dart';
 import '../data/dossiers_repository.dart';
+import 'duplicate_dossier.dart';
 
 /// Création ou modification d'un dossier (§ 3.2).
 class DossierFormScreen extends ConsumerStatefulWidget {
@@ -104,7 +105,11 @@ class _DossierFormScreenState extends ConsumerState<DossierFormScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final heading = widget.isEditing ? 'Modifier le dossier' : 'Nouveau dossier';
+    final heading = widget.isEditing
+        ? 'Modifier le dossier'
+        : 'Nouveau dossier';
+    final hasExisting =
+        ref.watch(dossierOverviewsProvider).value?.isNotEmpty ?? false;
     return Form(
       key: _formKey,
       child: DetailScaffold(
@@ -134,6 +139,18 @@ class _DossierFormScreenState extends ConsumerState<DossierFormScreen> {
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
               sliver: SliverList.list(
                 children: [
+                  if (!widget.isEditing && hasExisting)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: Panel(
+                        child: AppRow(
+                          leading: const IconTile(Icons.copy_all_rounded),
+                          title: 'Partir d’un dossier existant',
+                          subtitle: 'Reprendre ses pièces et ses consignes',
+                          onTap: () => startFromExistingDossier(context, ref),
+                        ),
+                      ),
+                    ),
                   FormSection(
                     title: 'Dossier',
                     children: [

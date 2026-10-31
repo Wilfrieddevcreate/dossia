@@ -1,5 +1,7 @@
 package net.alopro.dossia
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity : FlutterActivity()
+// FragmentActivity : requise par local_auth pour afficher l'invite de
+// déverrouillage (empreinte, visage ou code du téléphone).
+class MainActivity : FlutterFragmentActivity()

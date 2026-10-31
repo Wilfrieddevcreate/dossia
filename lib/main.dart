@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'app/app.dart';
 import 'app/router.dart';
 import 'core/notifications/notification_service.dart';
+import 'core/security/app_lock.dart';
 import 'features/settings/data/settings_repository.dart';
 
 Future<void> main() async {
@@ -19,11 +20,17 @@ Future<void> main() async {
   // L'emplacement initial dépend de l'onboarding : il est lu avant la
   // création du routeur.
   var initialLocation = Routes.home;
+  var initiallyLocked = false;
   final container = ProviderContainer(
-    overrides: [initialLocationProvider.overrideWith((ref) => initialLocation)],
+    overrides: [
+      initialLocationProvider.overrideWith((ref) => initialLocation),
+      initialAppLockProvider.overrideWith((ref) => initiallyLocked),
+    ],
   );
   final settings = await container.read(settingsRepositoryProvider).load();
   if (!settings.onboardingCompleted) initialLocation = Routes.welcome;
+  // Verrouillée dès le premier affichage si l'option est active.
+  initiallyLocked = settings.appLockEnabled;
 
   // Les rappels ne doivent jamais empêcher l'ouverture de l'application.
   try {

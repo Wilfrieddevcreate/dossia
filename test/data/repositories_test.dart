@@ -475,4 +475,99 @@ void main() {
     );
     await fileDb.close();
   });
+
+  group('Dupliquer un dossier', () {
+    late String source;
+    late String passportDoc;
+    late String archivedDoc;
+
+    setUp(() async {
+      passportDoc = await documents.createDocument(
+        const DocumentInput(typeId: passport),
+      );
+      archivedDoc = await documents.createDocument(
+        const DocumentInput(typeId: transcript),
+      );
+      source = await dossiers.createDossier(
+        DossierInput(
+          title: 'Bourse 2026',
+          description: 'Dépôt en ligne',
+          deadline: DateTime(2026, 12, 1),
+        ),
+      );
+      final a = await requirements.createRequirement(
+        source,
+        RequirementInput(
+          typeId: passport,
+          instructions: 'Copie certifiée',
+          dueDate: DateTime(2026, 11, 1),
+        ),
+      );
+      final b = await requirements.createRequirement(
+        source,
+        const RequirementInput(
+          typeId: transcript,
+          quantity: 2,
+          isMandatory: false,
+        ),
+      );
+      await requirements.setFlaggedToVerify(a, true);
+      await requirements.linkDocument(itemId: a, documentId: passportDoc);
+      await requirements.linkDocument(itemId: b, documentId: archivedDoc);
+      await documents.setArchived(archivedDoc, true);
+      await dossiers.createTask(
+        source,
+        TaskInput(title: 'Envoyer le dossier', dueDate: DateTime(2026, 11, 20)),
+      );
+      final task = (await db.select(db.tasks).get()).single;
+      await dossiers.setTaskCompleted(task.id, true);
+      await dossiers.setCompleted(source, true);
+    });
+
+    test('reprend les pièces, sans dates ni documents par défaut', () async {
+      final copy = await dossiers.duplicateDossier(source, title: 'Bourse 2027');
+      final o = await overviewOf(copy);
+      expect(o.dossier.title, 'Bourse 2027');
+      expect(o.dossier.description, 'Dépôt en ligne');
+      expect(o.dossier.deadline, isNull);
+      expect(o.status, DossierStatus.inProgress);
+      expect(o.items.map((i) => i.view.displayName), [
+        'Passeport',
+        'Relevé de notes',
+      ]);
+      final first = o.items.first.view;
+      expect(first.item.instructions, 'Copie certifiée');
+      expect(first.item.dueDate, isNull);
+      expect(first.flaggedToVerify, isTrue);
+      expect(o.items[1].view.item.quantity, 2);
+      expect(o.items[1].view.item.isMandatory, isFalse);
+      expect(o.items.every((i) => i.view.links.isEmpty), isTrue);
+      expect(o.tasks.single.title, 'Envoyer le dossier');
+      expect(o.tasks.single.isCompleted, isFalse);
+      expect(o.tasks.single.dueDate, isNull);
+    });
+
+    test('reprend les documents non archivés sur demande', () async {
+      final copy = await dossiers.duplicateDossier(
+        source,
+        title: 'Copie',
+        keepDocuments: true,
+        copyTasks: false,
+      );
+      final o = await overviewOf(copy);
+      expect(o.items.first.view.links.single.doc.id, passportDoc);
+      expect(o.items[1].view.links, isEmpty);
+      expect(o.tasks, isEmpty);
+    });
+
+    test('le dossier d’origine reste inchangé', () async {
+      await dossiers.duplicateDossier(source, title: 'Copie', keepDocuments: true);
+      final o = await overviewOf(source);
+      expect(o.status, DossierStatus.completed);
+      expect(o.items.first.view.links.single.doc.id, passportDoc);
+      expect(o.items[1].view.links.single.doc.id, archivedDoc);
+      expect(o.tasks.single.isCompleted, isTrue);
+      expect(await db.select(db.dossiers).get(), hasLength(2));
+    });
+  });
 }

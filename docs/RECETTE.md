@@ -2,14 +2,14 @@
 
 ## 1. Tests automatisés
 
-`flutter test` : **87 tests, tous réussis** (état au 29/10/2026).
+`flutter test` : **131 tests, tous réussis** (état au 30/10/2026).
 
 | Dossier | Tests | Contenu |
 | --- | --- | --- |
 | `test/domain/` | 29 | Statuts des pièces, progression, statut du dossier, planification des rappels |
-| `test/data/` | 19 | Dépôts sur base SQLite réelle (en mémoire et sur fichier) : associations multiples, suppressions, contraintes, persistance, recherche, échéances |
-| `test/core/` | 27 | Sauvegarde/restauration (18) et récapitulatif PDF (9) |
-| `test/widget/` | 10 | Parcours principaux, et ouverture des 18 écrans avec des données longues, sur deux gabarits : 320×640 avec texte ×1,3, et 412×915 (tout débordement fait échouer le test) |
+| `test/data/` | 22 | Dépôts sur base SQLite réelle (en mémoire et sur fichier) : associations multiples, suppressions, contraintes, persistance, recherche, échéances |
+| `test/core/` | 67 | Sauvegarde/restauration (24), chiffrement des sauvegardes (26), verrouillage (8), récapitulatif PDF (9) |
+| `test/widget/` | 11 | Parcours principaux, écran de verrouillage, et ouverture des 18 écrans avec des données longues, sur deux gabarits : 320×640 avec texte ×1,3, et 412×915 (tout débordement fait échouer le test) |
 | `test/drift/` | 2 | Schéma conforme à l'instantané v1, relecture d'une base existante |
 
 ## 2. Scénarios du cahier des charges (§ 10)
@@ -66,6 +66,14 @@ fichiers, partage, notifications).
     les données sont là.
 11. Activer une grande taille de police dans Android et vérifier la
     lisibilité des écrans principaux.
+12. Joindre une photo prise avec l'appareil photo, puis une photo de la
+    galerie ; les ouvrir.
+13. Activer « Verrouiller Dossia » ; quitter l'application plus de
+    30 secondes : elle demande l'empreinte ou le code. Vérifier qu'elle ne se
+    reverrouille pas au retour de l'appareil photo.
+14. Dupliquer un dossier avec et sans les documents associés.
+15. Créer une sauvegarde protégée par mot de passe, la restaurer : un mauvais
+    mot de passe est refusé, le bon restaure tout.
 
 ## 4. Fonctionnalités livrées
 
@@ -83,9 +91,16 @@ restauration, écran de confidentialité, suppression de toutes les données.
 
 - **Pas encore testé sur un téléphone réel** : les vérifications du § 3
   restent à faire.
-- **Aucun chiffrement applicatif** de la base, des fichiers ou des
-  sauvegardes (protection par l'isolation Android et le chiffrement du
-  téléphone). Les sauvegardes .zip sont lisibles par qui y accède.
+- **Chiffrement** : seules les sauvegardes protégées par mot de passe sont
+  chiffrées. La base et les fichiers joints sur le téléphone ne le sont pas
+  (isolation Android, chiffrement du téléphone, verrouillage facultatif de
+  Dossia). Un mot de passe de sauvegarde perdu ne peut pas être récupéré.
+- **Sauvegardes volumineuses** : le chiffrement est fait en Dart pur ; une
+  sauvegarde avec beaucoup de photos peut prendre du temps sur un téléphone
+  d'entrée de gamme.
+- **Photo d'un document** : si Android ferme Dossia pendant que l'appareil
+  photo est ouvert (téléphone à court de mémoire), la photo n'est pas
+  récupérée et le formulaire en cours est perdu.
 - **Signature de debug** : l'APK de test n'est pas publiable tel quel sur
   Google Play (voir `TECHNIQUE.md` § 12).
 - **Rappels** : heure approximative (mode inexact) ; certains fabricants

@@ -6,6 +6,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/notifications/notification_service.dart';
+import '../core/security/app_lock.dart';
+import '../core/security/lock_screen.dart';
 import '../core/utils/today_provider.dart';
 import '../features/deadlines/data/deadlines_provider.dart';
 import '../features/deadlines/domain/reminder_planner.dart';
@@ -39,7 +41,10 @@ class _DossiaAppState extends ConsumerState<DossiaApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final lock = ref.read(appLockProvider.notifier);
+    if (state == AppLifecycleState.paused) lock.onBackground();
     if (state == AppLifecycleState.resumed) {
+      lock.onForeground();
       ref.read(todayProvider.notifier).refresh();
     }
   }
@@ -102,7 +107,7 @@ class _DossiaAppState extends ConsumerState<DossiaApp>
                 : Brightness.dark,
             systemNavigationBarContrastEnforced: false,
           ),
-          child: child!,
+          child: AppLockGate(child: child!),
         );
       },
     );

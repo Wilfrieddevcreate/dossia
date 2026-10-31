@@ -14,8 +14,9 @@ de voir immédiatement ce qui manque.
 ## Fonctionnalités
 
 - Onboarding facultatif avec inventaire des documents possédés.
-- Bibliothèque de documents : ajout sans fichier, PDF/image facultatif,
-  dates de délivrance et d'expiration, recherche, filtres, archivage.
+- Bibliothèque de documents : ajout sans fichier, photo prise avec
+  l'appareil photo ou PDF facultatif, dates de délivrance et d'expiration,
+  recherche, filtres, archivage.
 - Dossiers personnalisés : pièces obligatoires ou facultatives, quantités,
   instructions, échéances, tâches, notes.
 - Association d'un même document à plusieurs pièces et dossiers, avec
@@ -26,8 +27,11 @@ de voir immédiatement ce qui manque.
   locaux configurables.
 - Récapitulatif PDF d'un dossier, généré hors ligne, à partager ou
   enregistrer.
-- Sauvegarde manuelle (.zip versionné, vérifié par SHA-256) et restauration
-  contrôlée.
+- Dossiers réutilisables : duplication, ou création à partir d'un dossier
+  existant.
+- Sauvegarde manuelle (.zip versionné, vérifié par SHA-256), protégeable par
+  mot de passe (AES-256), et restauration contrôlée.
+- Verrouillage facultatif par empreinte, visage ou code du téléphone.
 
 ## Installer l'APK de test
 

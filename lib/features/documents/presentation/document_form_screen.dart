@@ -303,11 +303,11 @@ class _DocumentFormScreenState extends ConsumerState<DocumentFormScreen> {
                           ),
                         OutlinedButton.icon(
                           onPressed: _addFile,
-                          icon: const Icon(Icons.attach_file_rounded),
+                          icon: const Icon(Icons.add_a_photo_outlined),
                           label: Text(
                             _pendingFiles.isEmpty
-                                ? 'Joindre un PDF ou une photo'
-                                : 'Joindre un autre fichier',
+                                ? 'Photo ou fichier'
+                                : 'Ajouter un autre fichier',
                           ),
                         ),
                       ],

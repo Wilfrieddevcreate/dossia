@@ -12,6 +12,7 @@ import 'package:dossia/core/database/app_database.dart';
 import 'package:dossia/core/database/database_provider.dart';
 import 'package:dossia/core/files/file_storage_service.dart';
 import 'package:dossia/core/models/dossier_category.dart';
+import 'package:dossia/core/security/app_lock.dart';
 import 'package:dossia/features/documents/data/documents_repository.dart';
 import 'package:dossia/features/dossiers/data/dossiers_repository.dart';
 import 'package:dossia/features/requirements/data/requirements_repository.dart';
@@ -21,6 +22,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
@@ -206,6 +208,7 @@ void main() {
     Brightness brightness = Brightness.light,
     bool seed = true,
     Future<void> Function(WidgetTester)? before,
+    List<Override> overrides = const [],
   }) async {
     debugDisableShadows = false;
     try {
@@ -226,6 +229,7 @@ void main() {
             ),
           ),
           initialLocationProvider.overrideWithValue(Routes.home),
+          ...overrides,
         ],
       );
       addTearDown(() async {
@@ -330,6 +334,41 @@ void main() {
       brightness: Brightness.dark,
     );
   });
+  testWidgets('15_verrouillage', (tester) async {
+    await shoot(
+      tester,
+      '15_verrouillage',
+      () => Routes.home,
+      overrides: [
+        initialAppLockProvider.overrideWithValue(true),
+        deviceAuthProvider.overrideWithValue(_CancelledAuth()),
+      ],
+    );
+  });
+  testWidgets('16_joindre', (tester) async {
+    await shoot(
+      tester,
+      '16_joindre',
+      () => Routes.document(ids.passport),
+      before: (tester) async {
+        final row = find.text('Ajouter une photo ou un fichier');
+        await tester.scrollUntilVisible(row, 200);
+        await tester.tap(row);
+      },
+    );
+  });
+  testWidgets('17_dupliquer', (tester) async {
+    await shoot(
+      tester,
+      '17_dupliquer',
+      () => Routes.dossier(ids.visa),
+      before: (tester) async {
+        await tester.tap(find.byTooltip("Plus d'actions"));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Dupliquer'));
+      },
+    );
+  });
   testWidgets('32_documents_sombre', (tester) async {
     await shoot(
       tester,
@@ -338,4 +377,13 @@ void main() {
       brightness: Brightness.dark,
     );
   });
+}
+
+class _CancelledAuth extends DeviceAuth {
+  @override
+  Future<bool> isAvailable() async => true;
+
+  @override
+  Future<AuthOutcome> authenticate(String reason) async =>
+      AuthOutcome.cancelled;
 }

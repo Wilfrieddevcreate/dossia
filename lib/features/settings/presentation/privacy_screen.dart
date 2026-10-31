@@ -24,9 +24,10 @@ class PrivacyScreen extends StatelessWidget {
     (
       Icons.lock_outline_rounded,
       'Chiffrement',
-      'Dossia ne chiffre pas lui-même ses données : elles sont protégées par '
-          'l’isolation des applications Android et le chiffrement du '
-          'téléphone verrouillé. Protégez-le par un code ou une empreinte.',
+      'Sur le téléphone, Dossia ne chiffre pas lui-même ses données ni vos '
+          'fichiers joints : ils sont protégés par l’isolation des '
+          'applications Android et le chiffrement du téléphone verrouillé. '
+          'Protégez-le par un code ou une empreinte.',
     ),
     (
       Icons.notifications_none_rounded,
@@ -42,7 +43,9 @@ class PrivacyScreen extends StatelessWidget {
       'Pas de copie automatique',
       'La sauvegarde automatique d’Android est désactivée pour Dossia : rien '
           'n’est copié vers un service en ligne. Seules les sauvegardes que '
-          'vous créez existent ; ce sont des fichiers .zip non chiffrés.',
+          'vous créez existent. Protégées par un mot de passe, elles sont '
+          'chiffrées (AES-256) ; sinon, ce sont des fichiers .zip lisibles '
+          'par quiconque y accède.',
     ),
     (
       Icons.warning_amber_rounded,

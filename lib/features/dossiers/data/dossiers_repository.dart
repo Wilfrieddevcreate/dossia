@@ -132,6 +132,120 @@ class DossiersRepository {
     });
   }
 
+  /// Crée un dossier à partir de [sourceId] : mêmes catégorie, description,
+  /// notes et pièces (type, nom, obligation, quantité, instructions, notes,
+  /// condition à confirmer), dans le même ordre.
+  ///
+  /// Ne sont jamais repris : la date limite, les échéances des pièces, le
+  /// statut « Terminé » et l'archivage. Avec [keepDocuments], les documents
+  /// associés (non archivés) le sont aussi ; avec [copyTasks], les tâches,
+  /// décochées et sans date.
+  Future<String> duplicateDossier(
+    String sourceId, {
+    required String title,
+    bool keepDocuments = false,
+    bool copyTasks = true,
+  }) {
+    return _db.transaction(() async {
+      final source = await getDossier(sourceId);
+      if (source == null) throw StateError('Dossier introuvable');
+      final now = DateTime.now();
+      final id = newId();
+      await _db
+          .into(_db.dossiers)
+          .insert(
+            DossiersCompanion.insert(
+              id: id,
+              title: title.trim(),
+              category: Value(source.category),
+              description: Value(source.description),
+              notes: Value(source.notes),
+              createdAt: now,
+              updatedAt: now,
+              lastOpenedAt: Value(now),
+            ),
+          );
+
+      final items =
+          await (_db.select(_db.requiredItems)
+                ..where((i) => i.dossierId.equals(sourceId))
+                ..orderBy([
+                  (i) => OrderingTerm.asc(i.position),
+                  (i) => OrderingTerm.asc(i.createdAt),
+                ]))
+              .get();
+      final archivedDocs = {
+        for (final d in await (_db.select(
+          _db.personalDocuments,
+        )..where((d) => d.archivedAt.isNotNull())).get())
+          d.id,
+      };
+      for (var i = 0; i < items.length; i++) {
+        final item = items[i];
+        final itemId = newId();
+        await _db
+            .into(_db.requiredItems)
+            .insert(
+              RequiredItemsCompanion.insert(
+                id: itemId,
+                dossierId: id,
+                typeId: Value(item.typeId),
+                customName: Value(item.customName),
+                isMandatory: Value(item.isMandatory),
+                quantity: Value(item.quantity),
+                instructions: Value(item.instructions),
+                status: Value(item.status),
+                notes: Value(item.notes),
+                position: i,
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+        if (!keepDocuments) continue;
+        final links = await (_db.select(
+          _db.itemDocumentLinks,
+        )..where((l) => l.requiredItemId.equals(item.id))).get();
+        for (final link in links) {
+          if (archivedDocs.contains(link.personalDocumentId)) continue;
+          await _db
+              .into(_db.itemDocumentLinks)
+              .insert(
+                ItemDocumentLinksCompanion.insert(
+                  id: newId(),
+                  requiredItemId: itemId,
+                  personalDocumentId: link.personalDocumentId,
+                  quantityAssigned: Value(link.quantityAssigned),
+                  linkedAt: now,
+                ),
+              );
+        }
+      }
+
+      if (copyTasks) {
+        final tasks =
+            await (_db.select(_db.tasks)
+                  ..where((t) => t.dossierId.equals(sourceId))
+                  ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
+                .get();
+        for (final t in tasks) {
+          await _db
+              .into(_db.tasks)
+              .insert(
+                TasksCompanion.insert(
+                  id: newId(),
+                  dossierId: id,
+                  title: t.title,
+                  notes: Value(t.notes),
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              );
+        }
+      }
+      return id;
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Tâches
 

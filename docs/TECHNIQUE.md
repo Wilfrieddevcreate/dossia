@@ -61,8 +61,11 @@ Versions figées par `pubspec.lock`.
 | pdf | 3.13.1 | Récapitulatif PDF |
 | share_plus | 13.3.1 | Partage Android |
 | open_filex | 5.0.0 | Ouverture des PDF joints dans une autre application |
+| image_picker | 1.2.4 | Photo d'un document (appareil photo du système) ou choix dans la galerie |
+| local_auth / local_auth_android | 3.0.2 / 2.3.0 | Verrouillage par empreinte, visage ou code du téléphone |
 | flutter_local_notifications / timezone / flutter_timezone | 22.3.3 / 0.11.2 / 5.1.1 | Rappels locaux programmés |
-| archive / crypto | 4.5.2 / 3.0.8 | Sauvegarde .zip, empreintes SHA-256 |
+| archive / crypto | 4.5.2 / 3.0.8 | Sauvegarde .zip, empreintes SHA-256, PBKDF2 |
+| cryptography | 2.9.0 | Chiffrement AES-256-GCM des sauvegardes protégées |
 | intl / flutter_localizations | 0.20.2 | Dates et interface en français |
 | uuid | 4.6.0 | Identifiants |
 | drift_dev / build_runner (dev) | 2.35.2 / 2.15.1 | Génération de code drift |
@@ -177,12 +180,45 @@ certification. Les scans ne sont jamais inclus.
   locales restent intactes.
 - Une sauvegarde créée par une version plus récente du schéma est refusée.
 - Les archives temporaires et exports précédents sont effacés du cache.
+- **Sauvegarde protégée par mot de passe** (facultative, recommandée dans
+  l'interface) : fichier `.dossia` qui enveloppe l'archive `.zip`.
+  Format et justification dans `lib/core/backup/backup_crypto.dart`.
+  - Clé : PBKDF2-HMAC-SHA256, 600 000 itérations (recommandation OWASP), sel
+    aléatoire de 16 octets ; deux sous-clés dérivées par HMAC (chiffrement,
+    contrôle du mot de passe). Mot de passe de 8 caractères au moins.
+  - Chiffrement : AES-256-GCM par blocs de 1 Mio, construction STREAM
+    (compteur + indicateur de dernier bloc), en-tête authentifié par chaque
+    bloc. Toute modification, troncature, permutation ou donnée ajoutée est
+    détectée ; un mauvais mot de passe est distingué d'un fichier abîmé.
+  - Traitement de fichier à fichier dans un isolate ; aucune copie en clair ne
+    reste sur le téléphone, ni à la création ni à la restauration.
+  - Mot de passe perdu = sauvegarde irrécupérable (aucune copie conservée).
+  - Mesures sur poste de développement : dérivation 1,4 s, AES-GCM
+    ≈ 7,5 Mo/s ; compter 2 à 3 fois plus lent sur un téléphone d'entrée de
+    gamme. La restauration dérive la clé deux fois (vérification puis
+    restauration).
+  - Le mot de passe est encodé en UTF-8 sans normalisation Unicode : un mot de
+    passe accentué saisi sur deux claviers différents pourrait, rarement,
+    différer.
 
 ## 9. Sécurité et confidentialité
 
-- Aucune permission Internet ni stockage dans le manifeste fusionné : seules
-  `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`, `VIBRATE` (ajoutée par le
-  module de notifications) et une permission interne AndroidX.
+- Aucune permission Internet, appareil photo ni stockage dans le manifeste
+  fusionné : seules `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`,
+  `VIBRATE` (module de notifications), `USE_BIOMETRIC` et `USE_FINGERPRINT`
+  (verrouillage ; la seconde pour Android 8 et antérieur) et une permission
+  interne AndroidX. La photo d'un document passe par
+  l'application Appareil photo du système, qui n'exige aucune permission.
+- **Verrouillage** (`lib/core/security/`) : facultatif, désactivé par
+  défaut. Écran opaque au-dessus de toute l'application (contenu exclu de
+  l'accessibilité), à l'ouverture et après 30 s hors de l'application. Le
+  retour d'une activité ouverte par Dossia (appareil photo, sélecteurs,
+  partage) ne reverrouille pas. Activer ou désactiver exige une
+  authentification. Le code du téléphone reste toujours accepté en secours ;
+  si le téléphone n'a plus aucun verrouillage, l'option se désactive
+  d'elle-même pour ne jamais rendre les données inaccessibles.
+  `MainActivity` hérite de `FlutterFragmentActivity` et les thèmes de
+  lancement d'AppCompat, comme l'exige `local_auth`.
 - Les permissions d'accès aux médias déclarées par `open_filex` sont retirées
   (`tools:node="remove"`) : le sélecteur système ne les requiert pas.
 - Sauvegarde automatique Android désactivée (`allowBackup="false"`,
@@ -191,10 +227,12 @@ certification. Les scans ne sont jamais inclus.
 - Aucun contenu de document n'est écrit dans les journaux ; les messages
   d'erreur affichés sont génériques pour les erreurs techniques
   (`UserFacingError` pour les messages destinés à l'utilisateur).
-- **Pas de chiffrement applicatif** : la base, les fichiers joints et les
-  sauvegardes ne sont pas chiffrés par Dossia. Ils reposent sur l'isolation
-  des applications et le chiffrement du téléphone. Les sauvegardes .zip sont
-  lisibles par quiconque y accède ; l'interface le dit explicitement.
+- **Chiffrement** : seules les sauvegardes protégées par mot de passe sont
+  chiffrées par Dossia (§ 8). La base et les fichiers joints présents sur le
+  téléphone ne le sont pas : ils reposent sur l'isolation des applications,
+  le chiffrement du téléphone et, en option, le verrouillage de Dossia. Une
+  sauvegarde sans mot de passe est un .zip lisible par quiconque y accède ;
+  l'interface le dit explicitement.
 
 ## 10. Migrations
 

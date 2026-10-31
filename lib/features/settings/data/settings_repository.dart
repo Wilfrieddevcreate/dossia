@@ -10,6 +10,7 @@ abstract final class SettingKeys {
   static const deadlineReminderDays = 'deadline_reminder_days';
   static const expiryReminderDays = 'expiry_reminder_days';
   static const lastBackupAt = 'last_backup_at';
+  static const appLockEnabled = 'app_lock_enabled';
 }
 
 /// Préférences de l'application, avec leurs valeurs par défaut.
@@ -22,6 +23,10 @@ class AppSettings {
 
   bool get onboardingCompleted =>
       _values[SettingKeys.onboardingCompleted] == 'true';
+
+  /// Verrouillage par l'authentification du téléphone (désactivé par
+  /// défaut).
+  bool get appLockEnabled => _values[SettingKeys.appLockEnabled] == 'true';
 
   /// Les rappels sont désactivés tant que l'utilisateur ne les a pas activés.
   bool get notificationsEnabled =>

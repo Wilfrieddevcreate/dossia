@@ -30,6 +30,14 @@
 /// `document_files` sont tout de même exportées pour conserver les
 /// métadonnées ; l'application signale alors ces fichiers comme absents.
 ///
+/// ## Sauvegarde protégée par mot de passe
+///
+/// Avec un mot de passe, l'archive ZIP ci-dessus est chiffrée dans un
+/// conteneur `.dossia` (voir `backup_crypto.dart` : PBKDF2-HMAC-SHA256,
+/// AES-256-GCM par blocs). L'archive en clair intermédiaire est supprimée dès
+/// le chiffrement terminé ; à la restauration, elle est déchiffrée dans un
+/// répertoire temporaire supprimé dans tous les cas.
+///
 /// À la restauration, l'archive est entièrement vérifiée (format, versions,
 /// empreintes SHA-256, cohérence des références, chemins) avant toute
 /// modification. Le remplacement des données se fait dans une seule
@@ -39,6 +47,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
@@ -53,6 +62,7 @@ import '../database/database_provider.dart';
 import '../database/seed_data.dart';
 import '../files/file_storage_service.dart';
 import '../utils/app_info.dart';
+import 'backup_crypto.dart';
 import '../utils/errors.dart';
 
 const backupFormat = 'dossia-backup';
@@ -76,6 +86,17 @@ class BackupException implements UserFacingError {
 
   @override
   String toString() => message;
+}
+
+/// La sauvegarde est chiffrée : un mot de passe est nécessaire.
+class BackupPasswordRequired extends BackupException {
+  const BackupPasswordRequired()
+    : super('Cette sauvegarde est protégée par un mot de passe.');
+}
+
+/// Le mot de passe ne permet pas d'ouvrir la sauvegarde.
+class BackupWrongPassword extends BackupException {
+  const BackupWrongPassword() : super('Mot de passe incorrect.');
 }
 
 /// Résumé d'une sauvegarde, affiché avant la restauration.
@@ -114,17 +135,25 @@ class BackupPreview {
 }
 
 class BackupService {
+  /// [kdfIterations] ne doit être réduit que dans les tests : il fixe le coût
+  /// de dérivation des nouvelles sauvegardes chiffrées et abaisse d'autant le
+  /// plancher accepté à la lecture.
   BackupService({
     required this._db,
     required this._files,
     Future<Directory> Function()? workDirectory,
     this._appVersion,
-  }) : _workDirectory = workDirectory ?? getTemporaryDirectory;
+    int? kdfIterations,
+  }) : _workDirectory = workDirectory ?? getTemporaryDirectory,
+       _kdfIterations = kdfIterations ?? defaultKdfIterations;
 
   final AppDatabase _db;
   final FileStorageService _files;
   final Future<Directory> Function() _workDirectory;
   final String? _appVersion;
+  final int _kdfIterations;
+
+  int get _kdfFloor => min(minKdfIterations, _kdfIterations);
 
   static const _archivePrefix = 'dossia-sauvegarde-';
 
@@ -135,14 +164,26 @@ class BackupService {
   ///
   /// Les sauvegardes précédentes laissées dans ce répertoire sont supprimées,
   /// pour ne pas conserver de copies de données personnelles en cache.
-  Future<File> createBackup({required bool includeFiles}) async {
+  ///
+  /// Avec [password], l'archive est chiffrée (fichier `.dossia`) et l'archive
+  /// en clair intermédiaire est supprimée aussitôt.
+  Future<File> createBackup({
+    required bool includeFiles,
+    String? password,
+  }) async {
+    if (password != null && password.runes.length < minBackupPasswordLength) {
+      throw const BackupException(
+        'Le mot de passe doit contenir au moins $minBackupPasswordLength '
+        'caractères.',
+      );
+    }
     final work = await _workDirectory();
     await work.create(recursive: true);
     await for (final entity in work.list()) {
       final name = p.basename(entity.path);
       if (entity is File &&
           name.startsWith(_archivePrefix) &&
-          name.endsWith('.zip')) {
+          (name.endsWith('.zip') || name.endsWith('.dossia'))) {
         await entity.delete();
       }
     }
@@ -193,6 +234,30 @@ class BackupService {
       );
     }
 
+    var result = File(archivePath);
+    if (password != null) {
+      final encryptedPath = p.join(
+        work.path,
+        '$_archivePrefix${_stamp(now)}.dossia',
+      );
+      try {
+        await encryptBackupFile(
+          sourcePath: archivePath,
+          targetPath: encryptedPath,
+          password: password,
+          iterations: _kdfIterations,
+        );
+      } on FileSystemException {
+        throw const BackupException(
+          "Impossible de créer la sauvegarde. Vérifiez l'espace de stockage disponible.",
+        );
+      } finally {
+        // L'archive en clair ne doit jamais rester sur l'appareil.
+        await _deleteQuietly(File(archivePath));
+      }
+      result = File(encryptedPath);
+    }
+
     await _db
         .into(_db.settings)
         .insertOnConflictUpdate(
@@ -201,8 +266,11 @@ class BackupService {
             value: now.toUtc().toIso8601String(),
           ),
         );
-    return File(archivePath);
+    return result;
   }
+
+  /// Indique si [file] est une sauvegarde protégée par mot de passe.
+  Future<bool> isEncryptedBackup(File file) => isEncryptedContainer(file);
 
   Future<_BackupData> _exportData() async => _BackupData(
     documentTypes: await _db.select(_db.documentTypes).get(),
@@ -219,12 +287,60 @@ class BackupService {
   // Lecture et restauration
 
   /// Lit et valide une archive sans rien modifier.
-  Future<BackupPreview> inspectBackup(File archive) async {
-    final staging = await _createStaging();
+  ///
+  /// Une sauvegarde chiffrée demande [password] : sans lui,
+  /// [BackupPasswordRequired] est levée ; s'il est faux, [BackupWrongPassword].
+  Future<BackupPreview> inspectBackup(File archive, {String? password}) {
+    return _withPlainArchive(archive, password, (zip) async {
+      final staging = await _createStaging();
+      try {
+        return (await _load(zip, staging)).preview;
+      } finally {
+        await _deleteQuietly(staging);
+      }
+    });
+  }
+
+  /// Exécute [body] sur l'archive ZIP en clair, en déchiffrant d'abord une
+  /// sauvegarde protégée dans un répertoire temporaire, toujours supprimé.
+  Future<T> _withPlainArchive<T>(
+    File archive,
+    String? password,
+    Future<T> Function(File zip) body,
+  ) async {
+    if (!await isEncryptedContainer(archive)) return body(archive);
+    if (password == null) throw const BackupPasswordRequired();
+    final work = await _workDirectory();
+    await work.create(recursive: true);
+    final temp = await work.createTemp('dossia-dechiffrement-');
     try {
-      return (await _load(archive, staging)).preview;
+      final zip = File(p.join(temp.path, 'sauvegarde.zip'));
+      try {
+        await decryptBackupFile(
+          sourcePath: archive.path,
+          targetPath: zip.path,
+          password: password,
+          minIterations: _kdfFloor,
+        );
+      } on BackupCryptoException catch (e) {
+        throw switch (e.kind) {
+          BackupCryptoErrorKind.wrongPassword => const BackupWrongPassword(),
+          BackupCryptoErrorKind.damaged => const BackupException(
+            'Cette sauvegarde chiffrée est endommagée ou incomplète.',
+          ),
+          BackupCryptoErrorKind.unsupported => const BackupException(
+            'Cette sauvegarde a été créée par une version plus récente de '
+            'Dossia. Mettez l’application à jour pour la restaurer.',
+          ),
+        };
+      } on FileSystemException {
+        throw const BackupException(
+          "Impossible de lire la sauvegarde. Vérifiez l'espace de stockage disponible.",
+        );
+      }
+      return await body(zip);
     } finally {
-      await _deleteQuietly(staging);
+      await _deleteQuietly(temp);
     }
   }
 
@@ -232,7 +348,13 @@ class BackupService {
   ///
   /// L'archive est d'abord entièrement validée. Les données sont remplacées
   /// dans une seule transaction ; en cas d'échec, rien n'est modifié.
-  Future<BackupPreview> restoreBackup(File archive) async {
+  ///
+  /// Une sauvegarde chiffrée demande [password] (voir [inspectBackup]).
+  Future<BackupPreview> restoreBackup(File archive, {String? password}) {
+    return _withPlainArchive(archive, password, _restorePlain);
+  }
+
+  Future<BackupPreview> _restorePlain(File archive) async {
     final staging = await _createStaging();
     try {
       final loaded = await _load(archive, staging);

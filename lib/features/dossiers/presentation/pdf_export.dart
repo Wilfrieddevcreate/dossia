@@ -108,17 +108,15 @@ class _ExportSheetState extends State<_ExportSheet> {
           ),
           const SizedBox(height: 20),
           FilledButton.icon(
-            onPressed: () => Navigator.of(
-              context,
-            ).pop((_Destination.share, _includeNotes)),
+            onPressed: () =>
+                Navigator.of(context).pop((_Destination.share, _includeNotes)),
             icon: const Icon(Icons.ios_share_rounded),
             label: const Text('Partager'),
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
-            onPressed: () => Navigator.of(
-              context,
-            ).pop((_Destination.save, _includeNotes)),
+            onPressed: () =>
+                Navigator.of(context).pop((_Destination.save, _includeNotes)),
             icon: const Icon(Icons.download_rounded),
             label: const Text('Enregistrer sur le téléphone'),
           ),

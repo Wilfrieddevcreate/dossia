@@ -18,8 +18,9 @@ encore ? Tout fonctionne sans Internet et sans compte.
 
 - **Ajouter** : choisissez le type, puis renseignez si vous le souhaitez un
   nom personnalisé (« Passeport renouvelé en 2025 »), les dates de délivrance
-  et d'expiration, l'autorité émettrice, des notes, et joignez un PDF ou une
-  photo.
+  et d'expiration, l'autorité émettrice, des notes. Pour joindre le
+  document lui-même : **Prendre une photo** (l'appareil photo s'ouvre),
+  **Choisir une photo** dans la galerie, ou **Choisir un fichier** (PDF).
 - **Rechercher et filtrer** : barre de recherche (les accents sont ignorés)
   et filtres par catégorie.
 - **Fiche d'un document** : informations, fichiers joints (toucher pour
@@ -44,14 +45,23 @@ Badges : **Expire bientôt** (moins de 30 jours), **Expiré**, **Archivé**.
 3. Sur la fiche de la pièce :
    - **Vous avez déjà ce document** : touchez **Associer** après avoir vérifié
      qu'il convient ;
-   - **Associer un document existant** : n'importe quel document de la
+   - **Associer un document** : n'importe quel document de la
      bibliothèque ;
-   - **Ajouter un nouveau document** : il est créé dans la bibliothèque et
-     associé à la pièce ;
+   - **Nouveau document** : il est créé dans la bibliothèque et associé à la
+     pièce ;
    - **Une condition reste à confirmer** : à cocher tant qu'un point reste à
      régler (traduction, légalisation…).
 4. Un même document peut servir dans plusieurs dossiers. Retirer une
-   association (icône de lien barré) ne supprime jamais le document.
+   association (icône de lien barré) ne supprime jamais le document, et
+   « Annuler » apparaît quelques secondes pour revenir en arrière.
+
+### Réutiliser un dossier
+
+Menu ⋮ du dossier > **Dupliquer**, ou **Partir d'un dossier existant** en
+haut du formulaire de création. Les pièces sont reprises avec leurs
+consignes, sans dates. Vous choisissez de reprendre aussi les documents
+associés et les tâches (décochées). Pratique d'une année sur l'autre : bourse,
+réinscription, renouvellement de visa.
 
 ### Lire l'avancement
 
@@ -106,10 +116,14 @@ contient pas les scans de vos documents.
 1. Réglages > **Sauvegarde et restauration**.
 2. Laissez **Inclure les fichiers joints** activé pour conserver vos PDF et
    photos (la sauvegarde sera plus volumineuse).
-3. **Enregistrer sur l'appareil** (choisissez un dossier) ou **Envoyer vers
-   une autre application** (Drive, e-mail personnel, ordinateur…).
-4. Conservez la sauvegarde **hors du téléphone**. Elle n'est pas chiffrée :
-   ne la partagez pas.
+3. Recommandé : activez **Protéger par un mot de passe** (8 caractères au
+   moins). La sauvegarde est alors chiffrée et devient un fichier `.dossia`.
+   **Sans ce mot de passe, elle ne pourra pas être restaurée** : Dossia ne le
+   conserve pas et ne peut pas le retrouver.
+4. **Enregistrer sur le téléphone** (choisissez un dossier) ou **Envoyer vers
+   une application** (Drive, e-mail personnel, ordinateur…).
+5. Conservez la sauvegarde **hors du téléphone**. Sans mot de passe, c'est un
+   fichier `.zip` lisible par quiconque y accède : ne la partagez pas.
 
 L'accueil vous rappelle de sauvegarder si la dernière sauvegarde date de plus
 de 30 jours.
@@ -117,18 +131,28 @@ de 30 jours.
 ### Restaurer
 
 1. Réglages > Sauvegarde et restauration > **Choisir une sauvegarde**.
-2. Sélectionnez le fichier `dossia-sauvegarde-….zip`.
+2. Sélectionnez le fichier `dossia-sauvegarde-….zip` ou `….dossia`. Pour une
+   sauvegarde protégée, saisissez son mot de passe.
 3. Dossia vérifie le fichier sans rien modifier, puis affiche son contenu
    (date, nombre de documents et de dossiers).
 4. Confirmez **Remplacer mes données** : toutes les données actuelles de
    Dossia sont remplacées par celles de la sauvegarde.
 
 Un fichier abîmé, modifié ou créé par une version plus récente de Dossia est
-refusé, et vos données actuelles restent intactes. Si la sauvegarde ne
+refusé, et vos données actuelles restent intactes. Un mauvais mot de passe
+est signalé comme tel : vous pouvez réessayer. Si la sauvegarde ne
 contenait pas les fichiers joints, ceux-ci apparaissent comme « Fichier
 introuvable ».
 
-## 7. Confidentialité
+## 7. Confidentialité et verrouillage
+
+Réglages > **Sécurité** > **Verrouiller Dossia** : l'application demande
+votre empreinte, votre visage ou le code du téléphone à l'ouverture et
+après 30 secondes passées ailleurs (sauf au retour de l'appareil photo, du
+sélecteur de fichiers ou du partage ouverts depuis Dossia). Un code ou une
+empreinte doit être configuré sur le téléphone. Si vous le supprimez ensuite,
+Dossia se déverrouille et désactive l'option : vos données ne restent jamais
+bloquées.
 
 Réglages > **Confidentialité et stockage** explique où sont vos données.
 Réglages > **Supprimer toutes les données** efface tout le contenu de Dossia

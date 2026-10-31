@@ -14,6 +14,7 @@ import '../../requirements/presentation/requirement_tile.dart';
 import '../data/dossiers_repository.dart';
 import '../domain/dossier_models.dart';
 import '../domain/dossier_progress.dart';
+import 'duplicate_dossier.dart';
 import 'pdf_export.dart';
 import 'task_sheet.dart';
 
@@ -58,7 +59,7 @@ class _DossierDetailScreenState extends ConsumerState<DossierDetailScreen> {
   }
 }
 
-enum _MenuAction { edit, reorder, complete, archive, delete }
+enum _MenuAction { edit, duplicate, reorder, complete, archive, delete }
 
 class _DossierDetailView extends ConsumerWidget {
   const _DossierDetailView({required this.overview});
@@ -75,6 +76,8 @@ class _DossierDetailView extends ConsumerWidget {
     switch (action) {
       case _MenuAction.edit:
         context.push(Routes.editDossier(d.id));
+      case _MenuAction.duplicate:
+        await duplicateDossier(context, ref, overview);
       case _MenuAction.reorder:
         context.push(Routes.reorderItems(d.id));
       case _MenuAction.complete:
@@ -174,6 +177,7 @@ class _DossierDetailView extends ConsumerWidget {
           onSelected: (a) => _onMenu(context, ref, a),
           itemBuilder: (_) => [
             item(_MenuAction.edit, Icons.edit_outlined, 'Modifier'),
+            item(_MenuAction.duplicate, Icons.copy_all_rounded, 'Dupliquer'),
             if (overview.items.length > 1)
               item(
                 _MenuAction.reorder,

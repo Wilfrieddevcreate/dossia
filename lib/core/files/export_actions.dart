@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../security/app_lock.dart';
 import '../widgets/common.dart';
 
 /// Écrit [bytes] dans un sous-dossier du cache de l'application, après avoir
@@ -30,6 +31,7 @@ Future<void> shareExportedFile(
   String? subject,
 }) async {
   try {
+    ExternalActivity.expect();
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(file.path, mimeType: mimeType)],
@@ -57,6 +59,7 @@ Future<bool> saveExportToDevice(
   required String mimeType,
 }) async {
   try {
+    ExternalActivity.expect();
     final uri = await FilePicker.saveFile(
       dialogTitle: 'Enregistrer sous',
       fileName: fileName,

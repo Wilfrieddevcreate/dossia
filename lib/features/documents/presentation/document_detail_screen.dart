@@ -299,18 +299,18 @@ class _DocumentDetailView extends ConsumerWidget {
               AppRow(
                 dense: detail.files.isNotEmpty,
                 leading: IconTile(
-                  Icons.attach_file_rounded,
+                  Icons.add_a_photo_outlined,
                   size: 44,
                   background: theme.colorScheme.primaryContainer,
                   foreground: theme.colorScheme.onPrimaryContainer,
                 ),
-                title: 'Joindre un fichier',
+                title: 'Ajouter une photo ou un fichier',
                 titleStyle: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.primary,
                   fontWeight: FontWeight.w700,
                 ),
                 subtitle: detail.files.isEmpty
-                    ? 'PDF ou photo, facultatif'
+                    ? 'Appareil photo, galerie ou PDF'
                     : null,
                 chevron: false,
                 onTap: () => _addFile(context, ref),
